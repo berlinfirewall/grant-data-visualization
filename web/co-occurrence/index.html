@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Co-occurrence Country Graph</title>
+<style>
+  /* ============================================================
+     Aqua Design Language -- macOS Leopard era (10.5, 2007-2008)
+     Gray gradient window surfaces, translucent panels
+     Iconic "gel pill" specular highlights, 32-bit color
+     Blue reserved for accents/focus, not entire backgrounds
+     References: Apple HIG 2008, Part III "The Aqua Interface"
+     ============================================================ */
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+    overflow: hidden;
+    /* Leopard desktop: neutral gradient, lets content breathe */
+    background:
+      radial-gradient(ellipse at 50% 20%, #e8e0d4 0%, #c8c0b4 40%, #a8a098 70%, #888078 100%);
+    color: #3a3a3a;
+  }
+
+  #chart { width: 100vw; height: 100vh; }
+  svg { display: block; width: 100%; height: 100%; }
+
+  /* ============================================================
+     Aqua Window Panels -- Leopard gray gradient surface
+     ============================================================ */
+
+  .aqua-window {
+    position: absolute; z-index: 5;
+    border-radius: 10px;
+    /* Leopard window body: light gray gradient, subtle translucency */
+    background: linear-gradient(180deg,
+      rgba(240, 240, 238, 0.90) 0%,
+      rgba(225, 225, 222, 0.88) 100%
+    );
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    /* Aqua window border -- subtle, silver-toned */
+    border: 1px solid rgba(120, 120, 118, 0.50);
+    border-top-color: rgba(200, 200, 198, 0.6);
+    /* Soft drop shadow, not too deep */
+    box-shadow:
+      0 4px 20px rgba(0, 0, 0, 0.30),
+      0 1px 4px rgba(0, 0, 0, 0.20),
+      inset 0 1px 0 rgba(255, 255, 255, 0.70),
+      inset 0 -1px 0 rgba(100, 100, 98, 0.10);
+  }
+
+  /* Aqua title bar -- unified with toolbar in Leopard */
+  .aqua-titlebar {
+    height: 22px;
+    border-radius: 10px 10px 0 0;
+    /* Leopard title bar: gray gradient, not blue */
+    background: linear-gradient(180deg,
+      rgba(210, 210, 206, 0.95) 0%,
+      rgba(180, 180, 176, 0.90) 45%,
+      rgba(170, 170, 166, 0.92) 55%,
+      rgba(175, 175, 172, 0.90) 100%
+    );
+    border-bottom: 1px solid rgba(100, 100, 98, 0.45);
+    position: relative;
+    cursor: default;
+    /* Top specular highlight -- the iconic Aqua shine */
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.80),
+      inset 0 -1px 0 rgba(80, 80, 78, 0.15);
+  }
+  /* Glossy top reflection on title bar */
+  .aqua-titlebar::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 45%;
+    background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.03) 100%
+    );
+    border-radius: 10px 10px 0 0;
+    pointer-events: none;
+  }
+
+  /* Window body padding */
+  .aqua-body {
+    padding: 12px 16px;
+    color: #3a3a3a;
+  }
+
+  /* ============================================================
+     Title window (top-left)
+     ============================================================ */
+  .title-window {
+    top: 14px; left: 16px;
+    min-width: 300px;
+  }
+  .title-window .aqua-titlebar span {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+    font-size: 12px; font-weight: 700;
+    color: #4a4a4a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+    letter-spacing: 0.02em;
+  }
+  .title-window .aqua-body p {
+    font-size: 11px; color: #666;
+    line-height: 1.5;
+  }
+
+  /* ============================================================
+     Legend window (top-right)
+     ============================================================ */
+  .legend-window {
+    top: 14px; right: 14px;
+    min-width: 190px;
+  }
+  .legend-window .aqua-titlebar span {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+    font-size: 11px; font-weight: 700;
+    color: #4a4a4a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+  .legend-window .aqua-body .legend-item {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 4px 0;
+    font-size: 11px; color: #444;
+  }
+  .legend-item .legend-swatch {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .legend-item .legend-label {
+    cursor: pointer; user-select: none;
+  }
+
+  /* ============================================================
+     Connection panel (overlay)
+     ============================================================ */
+  .conn-window {
+    top: 14px; right: 14px; z-index: 6;
+    min-width: 280px; max-width: 320px;
+    max-height: 75vh;
+    overflow-y: auto;
+    display: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(140, 140, 138, 0.5) transparent;
+  }
+  .conn-window::-webkit-scrollbar { width: 7px; }
+  .conn-window::-webkit-scrollbar-track { background: transparent; }
+  .conn-window::-webkit-scrollbar-thumb {
+    background: rgba(140, 140, 138, 0.45);
+    border-radius: 4px;
+    border: 1px solid rgba(200, 200, 198, 0.3);
+  }
+  .conn-window .aqua-titlebar span {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; height: 100%; padding-right: 8px;
+    font-size: 11px; font-weight: 700;
+    color: #4a4a4a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+  .close-btn {
+    background: radial-gradient(circle at 40% 35%,
+      #ff9090 0%, #e05050 60%, #b02020 100%);
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.9);
+    width: 14px; height: 14px; border-radius: 50%;
+    font-size: 11px; line-height: 12px; text-align: center;
+    cursor: pointer; flex-shrink: 0;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.45),
+      0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: background 0.12s;
+  }
+  .close-btn:hover {
+    background: radial-gradient(circle at 40% 35%,
+      #ffb0b0 0%, #f06060 60%, #c03030 100%);
+  }
+  .conn-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(160, 160, 158, 0.25);
+  }
+  .conn-row:last-child { border-bottom: none; }
+  .conn-rank {
+    color: #999;
+    width: 18px; text-align: right;
+    font-size: 10px; font-weight: 700;
+  }
+  .conn-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,0.12);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .conn-name {
+    flex: 1; color: #444; font-size: 11px; font-weight: 600;
+  }
+  .conn-weight {
+    color: #3a6aaa; font-weight: 700; font-size: 11px;
+  }
+  .conn-bar-bg {
+    width: 48px; height: 8px;
+    /* Aqua groove: inset shadow */
+    background: linear-gradient(180deg,
+      rgba(200, 200, 196, 0.6) 0%,
+      rgba(235, 235, 232, 0.8) 100%
+    );
+    border-radius: 4px; overflow: hidden;
+    border: 1px solid rgba(130, 130, 128, 0.25);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .conn-bar {
+    height: 100%;
+    /* Aqua accent blue gel bar */
+    background: linear-gradient(180deg,
+      #90b8f0 0%, #5a88d8 50%, #3868b0 100%
+    );
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+
+  /* ============================================================
+     Controls window (bottom-left)
+     ============================================================ */
+  .controls-window {
+    bottom: 16px; left: 16px;
+  }
+  .controls-window .aqua-titlebar span {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+    font-size: 11px; font-weight: 700;
+    color: #4a4a4a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+  .controls-window .aqua-body label {
+    display: block; margin: 5px 0;
+    font-size: 11px; color: #444;
+    font-weight: 600;
+  }
+  .controls-window .aqua-body span.val {
+    color: #3a6aaa; font-weight: 700;
+  }
+
+  /* Aqua gel slider -- the track is a shallow groove */
+  input[type=range] {
+    width: 150px; vertical-align: middle;
+    -webkit-appearance: none; appearance: none;
+    height: 6px; border-radius: 3px;
+    /* Groove track */
+    background: linear-gradient(180deg,
+      rgba(180, 180, 176, 0.7) 0%,
+      rgba(200, 200, 196, 0.5) 100%
+    );
+    border: 1px solid rgba(120, 120, 118, 0.35);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+    outline: none; margin: 0 8px;
+  }
+  /* Aqua gel thumb -- classic glossy sphere */
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%;
+    /* Radial gel gradient with strong specular */
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #f0f0ee 10%, #d8d8d4 25%,
+      #b0b0ac 45%, #90908c 65%, #787874 85%, #60605c 100%
+    );
+    border: 1px solid rgba(60, 60, 58, 0.4);
+    box-shadow:
+      0 2px 5px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #f0f0ee 10%, #d8d8d4 25%,
+      #b0b0ac 45%, #90908c 65%, #787874 85%, #60605c 100%
+    );
+    border: 1px solid rgba(60, 60, 58, 0.4);
+    box-shadow:
+      0 2px 5px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60);
+    cursor: pointer;
+  }
+ /* ============================================================
+    Checkbox
+ ============================================================ */
+.checkbox-container{
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.show-labels {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+/* 2. Position the container */
+.apple-aqua-label {
+  display: inline-block;
+  position: relative;
+  cursor: pointer;
+  font-size: 24px;
+  width: 1em;
+  height: 1em;
+}
+
+/* 3. Build the Aqua glassy box */
+.aqua-box {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 16px;
+  width: 16px;
+  background-image: linear-gradient(
+      rgba(255, 255, 255, 0.9),
+      rgba(255, 255, 255, 0.3));
+  border: 1px solid #1c497d;
+  border-radius: 6px;
+  box-shadow: 
+    inset 0 1px 2px rgba(255, 255, 255, 0.6), 
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease-in-out;
+  pointer-events: none;
+}
+
+/* 4. Add the classic top white glare */
+.aqua-box::after {
+  content: "";
+  position: absolute;
+  top: 0px;
+  left: 10%;
+  width: 80%;
+  height: 40%;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.6), rgba(255,255,255,0));
+  border-radius: 4px;
+}
+
+/* 5. Checked State - Make it glow blue */
+.show-labels:checked + .aqua-box {
+  background: linear-gradient(to bottom, #0a50d0, #a0e8ff);
+  box-shadow: 
+    inset 0 1px 1px rgba(255, 255, 255, 0.6);
+}
+
+/* 6. The checkmark icon */
+.aqua-box::before {
+  content: "";
+  position: absolute;
+  display: none;
+  left: 6px;
+  width: 5px;
+  bottom:4px;
+  height: 10px;
+  border: solid black;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}
+
+.show-labels:checked + .aqua-box::before {
+  display: block;
+}
+
+  
+  /* ============================================================
+     Dual-range year slider
+     Two overlapping range inputs, gel thumbs tinted blue (min) / green (max)
+     ============================================================ */
+  .year-slider-container {
+    display: flex; align-items: center; gap: 0;
+    margin: 4px 0;
+  }
+  .year-slider-track {
+    position: relative;
+    width: 150px; height: 22px;
+    flex-shrink: 0;
+  }
+  .year-slider-track input[type=range] {
+    position: absolute;
+    top: 0; left: 0;
+    width: 150px; height: 22px;
+    -webkit-appearance: none; appearance: none;
+    background: transparent;
+    pointer-events: none;
+    outline: none;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+  }
+  /* Groove track behind both thumbs */
+  .year-slider-track::before {
+    content: '';
+    position: absolute;
+    top: 8px; left: 0; right: 0;
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(180deg,
+      rgba(180, 180, 176, 0.7) 0%,
+      rgba(200, 200, 196, 0.5) 100%
+    );
+    border: 1px solid rgba(120, 120, 118, 0.35);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+    pointer-events: none;
+    z-index: 0;
+  }
+  /* Filled range between the two thumbs */
+  .year-slider-fill {
+    position: absolute;
+    top: 9px; height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg,
+      rgba(58, 136, 216, 0.40) 0%,
+      rgba(52, 180, 100, 0.40) 100%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+  /* Thumbs sit above track */
+  .year-slider-track input[type=range]::-webkit-slider-thumb {
+    pointer-events: all;
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1px solid rgba(60, 60, 58, 0.4);
+    box-shadow:
+      0 2px 5px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+    cursor: pointer;
+    z-index: 2;
+  }
+  .year-slider-track input[type=range]::-moz-range-thumb {
+    pointer-events: all;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1px solid rgba(60, 60, 58, 0.4);
+    box-shadow:
+      0 2px 5px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+    cursor: pointer;
+    z-index: 2;
+  }
+  /* Left thumb -- blue gel tint (start of range) */
+  #year-min::-webkit-slider-thumb {
+    background: radial-gradient(circle at 38% 32%,
+       #a0e8ff 15%, #0a50d0 90%
+    );
+    z-index: 3;
+  }
+  #year-min::-moz-range-thumb {
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #e8f0ff 10%, #83dffd 25%, #0342b9 80%, #02318b 100%
+    );
+    z-index: 3;
+  }
+  /* Right thumb -- green gel tint (end of range) */
+  #year-max::-webkit-slider-thumb {
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #e8ffe8 10%, #90e0a0 25%,
+      #44bb66 45%, #30a050 65%, #208038 85%, #16602a 100%
+    );
+  }
+  #year-max::-moz-range-thumb {
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #e8ffe8 10%, #90e0a0 25%,
+      #44bb66 45%, #30a050 65%, #208038 85%, #16602a 100%
+    );
+  }
+  .year-slider-label {
+    font-size: 11px; color: #3a6aaa; font-weight: 700;
+    white-space: nowrap; margin-left: 8px;
+  }
+
+  /* ============================================================
+     Aqua Push Button -- per design_ideas/aqua_css_button.html
+     Strong vertical gradient + color-dodge specular strip
+     ============================================================ */
+  button.aqua-btn {
+    display: block;
+    margin-top: 10px;
+    text-align: center;
+    text-decoration: none;
+    color: #1a1a1a;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 0.2rem 2rem;
+    border-radius: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.50);
+    box-shadow: 2px 2px 5px 1px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.10s ease, box-shadow 0.10s ease;
+    /* Dark blue top to bright cyan bottom */
+    background: linear-gradient(to bottom, #0342b9, #83dffd);
+  }
+  /* Specular highlight strip */
+  button.aqua-btn::after {
+    mix-blend-mode: color-dodge;
+    content: "";
+    position: absolute;
+    top: 0%;
+    left: 5%;
+    width: 90%;
+    height: 10px;
+    border-radius: 20px 20px 40px 40px;
+    overflow: hidden;
+    background-image: linear-gradient(
+      rgba(255, 255, 255, 0.9),
+      rgba(255, 255, 255, 0.3)
+      
+    );
+    opacity: 0.7;
+    z-index: 3;
+    pointer-events: none;
+  }
+  button.aqua-btn:hover {
+    background: linear-gradient(to bottom, #0a50d0, #a0e8ff);
+    box-shadow: 2px 2px 7px 1px rgba(0, 0, 0, 0.16);
+  }
+  button.aqua-btn:active {
+    background: linear-gradient(to bottom, #83dffd, #0342b9);
+    box-shadow:
+      inset 0 2px 4px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(0, 0, 0, 0.10);
+  }
+  button.aqua-btn:active::after {
+    opacity: 0.2;
+  }
+
+  /* Button row for side-by-side layout */
+  .btn-row {
+    display: flex; gap: 10px; margin-top: 10px;
+  }
+
+  /* ============================================================
+     Tooltip -- translucent dark panel per HIG p.236
+     (like Aperture's transparent adjustment panel)
+     ============================================================ */
+  .tooltip {
+    position: absolute; pointer-events: none;
+    /* Dark translucent background -- white text floats above */
+    background: linear-gradient(180deg,
+      rgba(30, 30, 28, 0.82) 0%,
+      rgba(20, 20, 18, 0.86) 100%
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(80, 80, 78, 0.45);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 11px; line-height: 1.5;
+    color: rgba(240, 240, 238, 0.95);
+    display: none; z-index: 10;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.40);
+  }
+  .tooltip strong { color: #a0c8ff; }
+
+  /* ============================================================
+     Highlight states
+     ============================================================ */
+  .node-dimmed { opacity: 0.06 !important; }
+  .edge-dimmed { opacity: 0.03 !important; }
+  .label-dimmed { opacity: 0.04 !important; }
+
+</style>
+</head>
+<body>
+
+<div id="chart"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<!-- Title Window -->
+<div class="aqua-window title-window">
+  <div class="aqua-titlebar">
+    <span>Co-occurrence Country Graph</span>
+  </div>
+  <div class="aqua-body">
+  	 <p>
+  	 	This visualization shows how different countries are mentioned in the <br>
+  	 	Russian Grant Dataset. Edges are determined by checking for mentions of <br>
+  	 	the other country alongside mentions of the given country.
+  	 </p><br>
+    <p>Node size = number of mentions &middot; Edge thickness = relatedness &middot; Color = region</p>
+  </div>
+</div>
+
+<!-- Legend Window -->
+<div class="aqua-window legend-window" id="legend">
+  <div class="aqua-titlebar">
+    <span>Regions</span>
+  </div>
+  <div class="aqua-body" id="legend-body"></div>
+</div>
+
+<!-- Connection Panel Window -->
+<div class="aqua-window conn-window" id="conn-panel">
+  <div class="aqua-titlebar">
+    <span><span id="conn-title">Connections</span> <button class="close-btn" id="conn-close">&times;</button></span>
+  </div>
+  <div class="aqua-body" id="conn-list"></div>
+</div>
+
+<!-- Controls Window -->
+<div class="aqua-window controls-window">
+  <div class="aqua-titlebar">
+    <span>Controls</span>
+  </div>
+  <div class="aqua-body">
+    <label>
+      Edge threshold:
+      <input type="range" id="threshold" min="1" max="200" value="10" step="1">
+      <span class="val" id="thresh-val">10</span>
+    </label>
+      <label>Show labels <div class="checkbox-container" style="top: 5px;">
+      <input type="checkbox" class="show-labels" id="show-labels">
+                <span class="aqua-box"></span>
+      </div>
+    </label>
+    <div class="year-slider-container">
+      <span style="font-size:11px;font-weight:600;color:#444;margin-right:4px;">Year:</span>
+      <div class="year-slider-track" id="year-slider">
+        <div class="year-slider-fill" id="year-fill"></div>
+        <input type="range" id="year-min" min="0" max="9" value="0" step="1">
+        <input type="range" id="year-max" min="0" max="9" value="9" step="1">
+      </div>
+      <span class="year-slider-label" id="year-label">2017 -- 2026</span>
+    </div>
+    <div class="btn-row">
+      <button class="aqua-btn" id="reset-zoom">Reset Zoom</button>
+      <button class="aqua-btn" id="reset-all">Reset All</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// --- Saturated region colors (kept for legend/connection panel swatches) ---
+const regionColors = {
+  "Europe":        "#4488dd",
+  "CIS":           "#dd5555",
+  "Americas":      "#44bb66",
+  "Asia":          "#dd9933",
+  "Africa":        "#9966cc",
+  "Middle_East":   "#dd5588",
+  "Oceania":       "#33bbcc",
+  "South_America":  "#88bb44"
+};
+
+// --- Build SVG defs: node icon gradients + glow filters ---
+// Each node is a composite of a gradient stroke ring, a linear-gradient body
+// circle, and a white gloss highlight path -- matching svg_icons/*.svg
+function addSVGDefs(svgEl) {
+  const defs = svgEl.append("defs");
+
+  // Color palette extracted from svg_icons/*.svg
+  // Each region maps to stroke gradient (dark top -> light bottom) and
+  // sphere body gradient (mid-tone top -> light bottom)
+  const iconColors = {
+    Europe:        { stroke: ["#0033aa", "#3399ff"], sphere: ["#0055cc", "#3399ff"] },
+    CIS:           { stroke: ["#691010", "#be1d1d"], sphere: ["#851414", "#be1d1d"] },
+    Americas:      { stroke: ["#037b00", "#3fbf3b"], sphere: ["#179113", "#3fbf3b"] },
+    Asia:          { stroke: ["#9b8400", "#d2c84a"], sphere: ["#ad9a18", "#d2c84a"] },
+    Africa:        { stroke: ["#610891", "#af73c3"], sphere: ["#7b2ba2", "#af73c3"] },
+    Middle_East:   { stroke: ["#9b4c00", "#cb9f5d"], sphere: ["#ab671f", "#cb9f5d"] },
+    Oceania:       { stroke: ["#0b6f69", "#48b9af"], sphere: ["#1f8780", "#48b9af"] },
+    South_America: { stroke: ["#434e5d", "#8693a5"], sphere: ["#596575", "#8693a5"] }
+  };
+
+  const rk = r => r.replace(/_/g, "");
+
+  // Per-region gradient definitions
+  Object.entries(iconColors).forEach(([region, colors]) => {
+    const key = rk(region);
+    // Stroke ring gradient (vertical, dark top -> light bottom)
+    const sg = defs.append("linearGradient")
+      .attr("id", `stroke-${key}`).attr("x1", "0").attr("y1", "0")
+      .attr("x2", "0").attr("y2", "1");
+    sg.append("stop").attr("offset", "0%").attr("stop-color", colors.stroke[0]);
+    sg.append("stop").attr("offset", "100%").attr("stop-color", colors.stroke[1]);
+    // Sphere body gradient (vertical)
+    const bg = defs.append("linearGradient")
+      .attr("id", `sphere-${key}`).attr("x1", "0").attr("y1", "0")
+      .attr("x2", "0").attr("y2", "1");
+    bg.append("stop").attr("offset", "0%").attr("stop-color", colors.sphere[0]);
+    bg.append("stop").attr("offset", "100%").attr("stop-color", colors.sphere[1]);
+  });
+
+  // Shared gloss highlight gradient (white 0.8 opacity fading to transparent)
+  const gloss = defs.append("linearGradient")
+    .attr("id", "gloss-highlight").attr("x1", "0").attr("y1", "0")
+    .attr("x2", "0").attr("y2", "1");
+  gloss.append("stop").attr("offset", "0%")
+    .attr("stop-color", "#ffffff").attr("stop-opacity", "0.8");
+  gloss.append("stop").attr("offset", "100%")
+    .attr("stop-color", "#ffffff").attr("stop-opacity", "0");
+
+  // Soft glow filter for hovered nodes (like the Aqua focus ring)
+  const glow = defs.append("filter").attr("id", "node-glow")
+    .attr("x", "-50%").attr("y", "-50%")
+    .attr("width", "200%").attr("height", "200%");
+  glow.append("feGaussianBlur").attr("stdDeviation", 4).attr("result", "blur");
+  glow.append("feFlood").attr("flood-color", "rgba(100,170,255,0.45)").attr("result", "color");
+  glow.append("feComposite").attr("in", "color").attr("in2", "blur")
+    .attr("operator", "in").attr("result", "coloredBlur");
+  const merge = glow.append("feMerge");
+  merge.append("feMergeNode").attr("in", "coloredBlur");
+  merge.append("feMergeNode").attr("in", "SourceGraphic");
+
+  // Depth filter for selected nodes
+  const depth = defs.append("filter").attr("id", "node-depth")
+    .attr("x", "-30%").attr("y", "-30%")
+    .attr("width", "160%").attr("height", "160%");
+  depth.append("feDropShadow").attr("dx", 0).attr("dy", 0)
+    .attr("stdDeviation", 6)
+    .attr("flood-color", "rgba(74,120,200,0.55)")
+    .attr("flood-opacity", "0.55");
+
+  // Label outline for readability
+  const lo = defs.append("filter").attr("id", "lbl-outline")
+    .attr("x", "-30%").attr("y", "-30%")
+    .attr("width", "160%").attr("height", "160%");
+  lo.append("feDropShadow").attr("dx", 0).attr("dy", 0)
+    .attr("stdDeviation", 1.5)
+    .attr("flood-color", "rgba(0,10,30,0.7)")
+    .attr("flood-opacity", "0.7");
+}
+
+// Gloss path generator: a semi-ellipse shape matching the SVG icons' design.
+// The path is normalized to a 100x100 coordinate system (center at 50,50).
+// d = node radius. Returns a path string relative to the node center (0,0).
+function glossPathForRadius(r) {
+  // Scale the icon's path coordinates (100x100 base) to the actual radius
+  const s = r / 50;
+  // Original path (from svg_icons): 
+  // M 18,30 C 18,17 32,8 50,8 C 68,8 82,17 82,30 C 82,42 68,45 50,45 C 32,45 18,42 18,30 Z
+  // Converted to relative coords centered at (0,0):
+  const x1 = (18 - 50) * s, y1 = (30 - 50) * s;
+  const cx1 = (18 - 50) * s, cy1 = (17 - 50) * s;
+  const cx2 = (32 - 50) * s, cy2 = (8 - 50) * s;
+  const cp1 = (50 - 50) * s, cp1y = (8 - 50) * s;
+  const cx3 = (68 - 50) * s, cy3 = (8 - 50) * s;
+  const cx4 = (82 - 50) * s, cy4 = (17 - 50) * s;
+  const cp2 = (82 - 50) * s, cp2y = (30 - 50) * s;
+  const cx5 = (82 - 50) * s, cy5 = (42 - 50) * s;
+  const cx6 = (68 - 50) * s, cy6 = (45 - 50) * s;
+  const cp3 = (50 - 50) * s, cp3y = (45 - 50) * s;
+  const cx7 = (32 - 50) * s, cy7 = (45 - 50) * s;
+  const cx8 = (18 - 50) * s, cy8 = (42 - 50) * s;
+  return `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${cp1},${cp1y} C${cx3},${cy3} ${cx4},${cy4} ${cp2},${cp2y} C${cx5},${cy5} ${cx6},${cy6} ${cp3},${cp3y} C${cx7},${cy7} ${cx8},${cy8} ${x1},${y1} Z`;
+}
+
+// Gradient ID helpers
+function sphereGradId(region) { return `url(#sphere-${region.replace(/_/g, "")})`; }
+function strokeGradId(region) { return `url(#stroke-${region.replace(/_/g, "")})`; }
+
+// --- Shared year data ---
+let yearKeys = [];   // e.g. ["2017", "2018", ...]
+let currentNodes = [];
+let currentEdges = [];
+let nodeRadiusScale, strokeWidthScale, opacityScale;
+let allNodes = [];   // all-time nodes (for connection panel lookup)
+let allEdges = [];   // all-time edges (for year slider fallback)
+
+// --- Load data ---
+d3.json("graph_data.json").then(data => {
+  const nodes = data.nodes.map(d => ({...d, r: 0}));
+  allNodes = nodes;
+  const nodeNames = new Set(nodes.map(n => n.name));
+
+  // Filter orphan edges
+  let orphanCount = 0;
+  const validEdges = data.edges.filter(e => {
+    const ok = nodeNames.has(e.source) && nodeNames.has(e.target);
+    if (!ok) { orphanCount++; console.warn(`Dropped edge: ${e.source} -> ${e.target} (weight ${e.weight})`); }
+    return ok;
+  });
+  console.log(`Edges: ${data.edges.length} total, ${validEdges.length} valid, ${orphanCount} dropped.`);
+
+  // --- Build year keys list ---
+  yearKeys = [];
+  if (data.by_year) {
+    Object.keys(data.by_year).forEach(y => yearKeys.push(y));
+  }
+  yearKeys.sort();  // ensure chronological order: 2017, 2018, ..., 2026
+
+  // --- Scales ---
+  const countExtent = d3.extent(nodes, d => d.count);
+  nodeRadiusScale = d3.scaleSqrt().domain(countExtent).range([4, 32]);
+  nodes.forEach(n => { n.r = nodeRadiusScale(n.count); });
+
+  const weightExtent = d3.extent(validEdges, d => d.weight);
+  strokeWidthScale = d3.scaleSqrt().domain(weightExtent).range([0.5, 8]);
+  opacityScale = d3.scaleLinear().domain(weightExtent).range([0.15, 0.5]);
+
+  // --- Set current data to all-time ---
+  currentNodes = nodes;
+  currentEdges = validEdges;
+  allEdges = validEdges;  // stored globally for year slider
+
+  // --- SVG setup ---
+  const svg = d3.select("#chart").append("svg")
+    .attr("viewBox", `0 0 ${window.innerWidth} ${window.innerHeight}`);
+
+  addSVGDefs(svg);
+
+  const g = svg.append("g");
+  const zoom = d3.zoom().scaleExtent([0.1, 8]).on("zoom", e => g.attr("transform", e.transform));
+  svg.call(zoom);
+
+  document.getElementById("reset-zoom").onclick = () => {
+    svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+  };
+
+  // Reset all controls + simulation
+  document.getElementById("reset-all").onclick = () => {
+    // Reset controls to defaults
+    document.getElementById("threshold").value = 10;
+    document.getElementById("thresh-val").textContent = "10";
+    document.getElementById("show-labels").checked = false;
+    yearMinSlider.value = 0;
+    yearMaxSlider.value = 9;
+    updateYearFill();
+
+    // Reset region filters (all active)
+    activeRegions.clear();
+    Object.keys(regionColors).forEach(r => activeRegions.add(r));
+    document.querySelectorAll("[id^=region-]").forEach(cb => cb.checked = true);
+
+    // Clear selection and rebuild graph with defaults
+    clearSelection();
+    const agg = aggregateYearData(0, 9);
+    currentEdges = agg.edges.filter(e => e.weight >= 10);
+    const connectedNames = new Set();
+    currentEdges.forEach(e => {
+      connectedNames.add(e.source);
+      connectedNames.add(e.target);
+    });
+    currentNodes = agg.nodes.filter(n => connectedNames.has(n.name));
+    updateScalesAndRadii(currentNodes, currentEdges);
+    buildGraph();
+
+    // Reset zoom
+    svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity);
+  };
+
+  // --- Shared state ---
+  let simulation;
+  let linkGroup, nodeGroup, labelGroup;
+  let selectedNode = null;
+  const connPanel = document.getElementById("conn-panel");
+  const connTitle = document.getElementById("conn-title");
+  const connList = document.getElementById("conn-list");
+
+  // Region filter state: all regions active by default
+  const activeRegions = new Set(Object.keys(regionColors));
+
+  function clearSelection() {
+    selectedNode = null;
+    if (nodeGroup) {
+      // Restore node groups
+      nodeGroup.selectAll(".node-group")
+        .classed("node-dimmed", false)
+        .attr("opacity", 0.97);
+      nodeGroup.selectAll(".node-body")
+        .attr("stroke", d => strokeGradId(d.region))
+        .attr("stroke-width", 1.5)
+        .style("filter", null);
+      // Restore edges -- no transition, direct set for performance
+      linkGroup.selectAll("line")
+        .classed("edge-dimmed", false)
+        .attr("stroke", "rgba(120,130,150,0.80)")
+        .attr("stroke-opacity", d => opacityScale(d.weight))
+        .style("filter", null);
+      labelGroup.selectAll("text").classed("label-dimmed", false);
+    }
+    connPanel.style.display = "none";
+    document.getElementById("legend").style.display = "block";
+  }
+
+  function selectNode(d, edges) {
+    if (selectedNode && selectedNode.name === d.name) { clearSelection(); return; }
+    selectedNode = d;
+
+    // Pre-compute connected names into a Set for O(1) lookup
+    const connectedNames = new Set();
+    connectedNames.add(d.name);
+    const connectedEdges = [];
+    // Pre-compute connected edge keys (sourceIdx-targetIdx pairs) so we skip per-edge string parsing
+    const connectedEdgeKeys = new Set();
+    edges.forEach((e, idx) => {
+      const sName = (typeof e.source === "object") ? e.source.name : e.source;
+      const tName = (typeof e.target === "object") ? e.target.name : e.target;
+      if (sName === d.name) {
+        connectedNames.add(tName);
+        connectedEdges.push({ name: tName, weight: e.weight });
+        connectedEdgeKeys.add(idx);
+      }
+      if (tName === d.name) {
+        connectedNames.add(sName);
+        connectedEdges.push({ name: sName, weight: e.weight });
+        connectedEdgeKeys.add(idx);
+      }
+    });
+
+    // --- Nodes: direct attribute set, no transition ---
+    const selStroke = "rgba(255,255,255,0.9)";
+    const connStroke = "rgba(200,215,235,0.60)";
+    const defaultStrokeFn = n => strokeGradId(n.region);
+
+    nodeGroup.selectAll(".node-group")
+      .classed("node-dimmed", n => !connectedNames.has(n.name));
+
+    nodeGroup.selectAll(".node-body")
+      .attr("stroke", n => n.name === d.name ? selStroke : (connectedNames.has(n.name) ? connStroke : strokeGradId(n.region)))
+      .attr("stroke-width", n => n.name === d.name ? 2.5 : (connectedNames.has(n.name) ? 1.8 : 1.5))
+      .style("filter", n => n.name === d.name ? "url(#node-depth)" : null);
+
+    // --- Edges: direct attribute set via .each with pre-computed set, no transition ---
+    const hlStroke = "#4a78c8";
+    const dimStroke = "rgba(140,160,190,0.40)";
+    linkGroup.selectAll("line")
+      .classed("edge-dimmed", (e, i) => !connectedEdgeKeys.has(i))
+      .each(function(e, i) {
+        const el = d3.select(this);
+        if (connectedEdgeKeys.has(i)) {
+          el.attr("stroke", hlStroke)
+            .attr("stroke-opacity", Math.min(opacityScale(e.weight) + 0.4, 0.85))
+            .style("filter", null);
+        } else {
+          el.attr("stroke", dimStroke)
+            .attr("stroke-opacity", opacityScale(e.weight))
+            .style("filter", null);
+        }
+      });
+
+    // --- Labels: direct class toggle, no transition ---
+    labelGroup.selectAll("text").classed("label-dimmed", n => !connectedNames.has(n.name));
+
+    // --- Connection panel: cap at 100 entries to prevent DOM explosion ---
+    const connMap = {};
+    connectedEdges.forEach(ce => {
+      if (!connMap[ce.name]) connMap[ce.name] = 0;
+      connMap[ce.name] += ce.weight;
+    });
+    let sorted = Object.entries(connMap).sort((a, b) => b[1] - a[1]);
+    const totalCount = sorted.length;
+    const maxShow = 100;
+    const capped = totalCount > maxShow;
+    if (capped) sorted = sorted.slice(0, maxShow);
+    const maxW = sorted.length ? sorted[0][1] : 1;
+
+    connTitle.textContent = `${d.display} connections (${totalCount})`;
+    connList.innerHTML = sorted.map((entry, i) => {
+      const [name, weight] = entry;
+      const nd = allNodes.find(n => n.name === name);
+      const color = nd ? (regionColors[nd.region] || "#888") : "#888";
+      const barW = (weight / maxW * 100).toFixed(0);
+      const displayName = (nd ? nd.display : name).replace(/_/g, " ");
+      return `<div class="conn-row">
+        <span class="conn-rank">${i + 1}</span>
+        <div class="conn-dot" style="background:${color}"></div>
+        <span class="conn-name">${displayName}</span>
+        <div class="conn-bar-bg"><div class="conn-bar" style="width:${barW}%"></div></div>
+        <span class="conn-weight">${weight}</span>
+      </div>`;
+    }).join("") + (capped ? `<div class="conn-row" style="color:#999;font-size:10px;padding:8px 0;"><em>... and ${totalCount - maxShow} more</em></div>` : "");
+
+    connPanel.style.display = "block";
+    document.getElementById("legend").style.display = "none";
+  }
+
+  // --- Build simulation ---
+  function buildGraph() {
+    g.selectAll("*").remove();
+
+    simulation = d3.forceSimulation(currentNodes)
+      .force("link", d3.forceLink(currentEdges).id(d => d.name)
+        .distance(d => 120 - Math.log(d.weight + 1) * 12)
+        .strength(d => Math.min(d.weight / 80, 0.8)))
+      .force("charge", d3.forceManyBody().strength(-250))
+      .force("center", d3.forceCenter(window.innerWidth / 2, window.innerHeight / 2))
+      .force("collision", d3.forceCollide().radius(d => d.r + 4))
+      .force("x", d3.forceX(window.innerWidth / 2).strength(0.03))
+      .force("y", d3.forceY(window.innerHeight / 2).strength(0.03))
+      .alphaDecay(0.05);
+
+    // Edges -- translucent gray with a subtle blue Aqua tint
+    linkGroup = g.append("g").attr("class", "links");
+    linkGroup.selectAll("line")
+      .data(currentEdges).join("line")
+      .attr("stroke", "rgba(120,130,150,0.80)")
+      .attr("stroke-width", d => strokeWidthScale(d.weight))
+      .attr("stroke-opacity", d => opacityScale(d.weight))
+      .attr("stroke-linecap", "round");
+
+    // Nodes -- each node is a <g> containing:
+    //   1. Gradient stroke ring (outer border)
+    //   2. Sphere body circle (linear gradient fill)
+    //   3. Gloss highlight path (white-to-transparent, no pointer events)
+    // This matches the design in svg_icons/*.svg
+    nodeGroup = g.append("g").attr("class", "nodes");
+
+    const nodeGroups = nodeGroup.selectAll(".node-group")
+      .data(currentNodes).join("g")
+      .attr("class", "node-group")
+      .attr("cursor", "pointer")
+      .attr("opacity", 0.97)
+      .call(d3.drag().on("start", dragStarted).on("drag", dragged).on("end", dragEnded));
+
+    // Stroke ring (outer border with gradient stroke)
+
+    // Sphere body (linear gradient fill)
+    nodeGroups.append("circle")
+      .attr("class", "node-body")
+      .attr("r", d => d.r)
+      .attr("fill", d => sphereGradId(d.region))
+      .attr("stroke", d => strokeGradId(d.region))
+      .attr("stroke-width", 1.5);
+
+    // Gloss highlight path (white-to-transparent, no pointer events)
+    nodeGroups.append("path")
+      .attr("class", "node-gloss")
+      .attr("d", d => glossPathForRadius(d.r))
+      .attr("fill", "url(#gloss-highlight)")
+      .attr("pointer-events", "none");
+
+    // Labels -- dark text with light outline for readability on neutral bg
+    labelGroup = g.append("g").attr("class", "labels");
+    labelGroup.selectAll("text")
+      .data(currentNodes).join("text")
+      .attr("text-anchor", "middle")
+      .attr("dy", d => d.r + 13)
+      .attr("fill", "rgba(30,30,28,0.90)")
+      .attr("font-size", d => Math.max(9, Math.min(13, d.r * 0.55)))
+      .attr("font-weight", "600")
+      .attr("pointer-events", "none")
+      .attr("filter", "url(#lbl-outline)")
+      .text(d => d.display)
+      .style("display", d => document.getElementById("show-labels").checked ? "block" : "none");
+
+    // Tooltip + selection
+    const tooltip = d3.select("#tooltip");
+
+    nodeGroup.selectAll(".node-group")
+      .on("mouseover", function(event, d) {
+        d3.select(this).select(".node-body")
+          .transition().duration(150)
+          .attr("stroke", "rgba(255,255,255,0.85)")
+          .attr("stroke-width", 2.5)
+          .style("filter", "url(#node-glow)");
+        d3.select(this).attr("opacity", 1);
+        tooltip.style("display", "block")
+          .html(`<strong>${d.display}</strong><br>Region: ${d.region}<br>Count: ${d.count}`);
+      })
+      .on("mousemove", function(event) {
+        tooltip.style("left", (event.pageX + 14) + "px")
+               .style("top", (event.pageY - 10) + "px");
+      })
+      .on("mouseout", function(event, d) {
+        if (!selectedNode || selectedNode.name !== d.name) {
+          d3.select(this).transition().duration(150).attr("opacity", 0.97);
+          d3.select(this).select(".node-body")
+            .attr("stroke", strokeGradId(d.region))
+            .attr("stroke-width", 1.5)
+            .style("filter", null);
+        }
+        tooltip.style("display", "none");
+      })
+      .on("click", function(event, d) {
+        event.stopPropagation();
+        selectNode(d, currentEdges);
+      });
+
+    svg.on("click", function(event) {
+      if (event.target === this || event.target.tagName === "svg") clearSelection();
+    });
+
+    simulation.on("tick", () => {
+      linkGroup.selectAll("line")
+        .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+      nodeGroup.selectAll(".node-group")
+        .attr("transform", d => `translate(${d.x},${d.y})`);
+      labelGroup.selectAll("text")
+        .attr("x", d => d.x).attr("y", d => d.y);
+    });
+
+    simulation.alpha(0.8).restart();
+    setTimeout(() => { simulation.alpha(0.05); }, 3000);
+  }
+
+  // --- Drag ---
+  function dragStarted(event, d) { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+  function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+  function dragEnded(event, d) { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
+
+  // --- Render ---
+  // Apply initial threshold + orphan cleanup so the loaded graph matches the slider defaults
+  currentEdges = currentEdges.filter(e => e.weight >= +document.getElementById("threshold").value);
+  const initialConnected = new Set();
+  currentEdges.forEach(e => { initialConnected.add(e.source); initialConnected.add(e.target); });
+  currentNodes = currentNodes.filter(n => initialConnected.has(n.name));
+  updateScalesAndRadii(currentNodes, currentEdges);
+  buildGraph();
+
+  // --- Legend ---
+  const legendBody = document.getElementById("legend-body");
+  legendBody.innerHTML = Object.entries(regionColors).map(([region, color]) => {
+    const safeKey = region.replace(/_/g, "");
+    return `<div class="legend-item">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="legend-swatch" style="background:${color}"></div>
+        <label class="legend-label" for="region-${safeKey}">${region.replace(/_/g, " ")}</label>
+      </div>
+      <div class="checkbox-container">
+        <input type="checkbox" class="show-labels" id="region-${safeKey}" checked>
+        <span class="aqua-box"></span>
+      </div>
+    </div>`;
+  }).join("");
+
+  // Wire up region checkbox handlers
+  Object.keys(regionColors).forEach(region => {
+    const safeKey = region.replace(/_/g, "");
+    const cb = document.getElementById(`region-${safeKey}`);
+    cb.addEventListener("change", () => {
+      if (cb.checked) { activeRegions.add(region); }
+      else { activeRegions.delete(region); }
+      applyFilters();
+    });
+  });
+
+  // --- Apply all filters (threshold + year range + region) then rebuild ---
+  function applyFilters() {
+    const t = +document.getElementById("threshold").value;
+    const minVal = +yearMinSlider.value;
+    const maxVal = +yearMaxSlider.value;
+    const actualMin = Math.min(minVal, maxVal);
+    const actualMax = Math.max(minVal, maxVal);
+
+    const agg = aggregateYearData(actualMin, actualMax);
+
+    // Filter edges by threshold and region
+    currentEdges = agg.edges.filter(e => {
+      if (e.weight < t) return false;
+      // Both endpoints must be in active regions
+      const sNode = agg.nodes.find(n => n.name === e.source);
+      const tNode = agg.nodes.find(n => n.name === e.target);
+      if (!sNode || !tNode) return false;
+      return activeRegions.has(sNode.region) && activeRegions.has(tNode.region);
+    });
+
+    // Remove orphan nodes (no remaining edges) and filter by active regions
+    const connectedNames = new Set();
+    currentEdges.forEach(e => {
+      connectedNames.add(e.source);
+      connectedNames.add(e.target);
+    });
+    currentNodes = agg.nodes.filter(n =>
+      connectedNames.has(n.name) && activeRegions.has(n.region)
+    );
+
+    updateScalesAndRadii(currentNodes, currentEdges);
+    clearSelection();
+    buildGraph();
+  }
+
+  // --- Controls ---
+  document.getElementById("threshold").addEventListener("input", () => {
+    const t = +document.getElementById("threshold").value;
+    document.getElementById("thresh-val").textContent = t;
+    applyFilters();
+  });
+
+  document.getElementById("show-labels").addEventListener("change", e => {
+    labelGroup.selectAll("text").style("display", e.target.checked ? "block" : "none");
+  });
+
+  // --- Dual-range year slider ---
+  // yearKeys is sorted array of year strings, e.g. ["2017","2018",...,"2026"]
+  // Slider indices: 0 = yearKeys[0] (2017), 9 = yearKeys[9] (2026)
+  const yearMinSlider = document.getElementById("year-min");
+  const yearMaxSlider = document.getElementById("year-max");
+  const yearFill = document.getElementById("year-fill");
+  const yearLabel = document.getElementById("year-label");
+
+  // Compute aggregated nodes/edges for a range of year indices [minIdx, maxIdx]
+  function aggregateYearData(minIdx, maxIdx) {
+    const selectedYears = [];
+    for (let i = minIdx; i <= maxIdx; i++) {
+      if (i < yearKeys.length) selectedYears.push(yearKeys[i]);
+    }
+
+    if (!data.by_year || selectedYears.length === 0) {
+      return { nodes: allNodes, edges: allEdges };
+    }
+
+    // Aggregate edges: sum weights for same source-target pairs
+    const edgeMap = {};
+    selectedYears.forEach(y => {
+      const yearEdges = (data.by_year[y] && data.by_year[y].edges) ? data.by_year[y].edges : [];
+      yearEdges.forEach(e => {
+        const key = e.source + "|||" + e.target;
+        if (!edgeMap[key]) edgeMap[key] = { source: e.source, target: e.target, weight: 0 };
+        edgeMap[key].weight += e.weight;
+      });
+    });
+
+    // Aggregate nodes: sum counts for same name, keep first display/region
+    const nodeMap = {};
+    selectedYears.forEach(y => {
+      const yearNodes = (data.by_year[y] && data.by_year[y].nodes) ? data.by_year[y].nodes : [];
+      yearNodes.forEach(n => {
+        if (!nodeMap[n.name]) {
+          nodeMap[n.name] = { name: n.name, display: n.display, count: 0, region: n.region };
+        }
+        nodeMap[n.name].count += n.count;
+      });
+    });
+
+    return {
+      nodes: Object.values(nodeMap).map(d => ({...d, r: 0})),
+      edges: Object.values(edgeMap)
+    };
+  }
+
+  function updateYearFill() {
+    const minVal = +yearMinSlider.value;
+    const maxVal = +yearMaxSlider.value;
+    // Clamp: min cannot exceed max
+    const actualMin = Math.min(minVal, maxVal);
+    const actualMax = Math.max(minVal, maxVal);
+    const pctMin = (actualMin / 9) * 100;
+    const pctMax = (actualMax / 9) * 100;
+    yearFill.style.left = pctMin + "%";
+    yearFill.style.width = (pctMax - pctMin) + "%";
+
+    const y1 = yearKeys[actualMin] || yearKeys[0];
+    const y2 = yearKeys[actualMax] || yearKeys[yearKeys.length - 1];
+    yearLabel.textContent = `${y1} -- ${y2}`;
+  }
+
+  // Recompute all d3 scales + node radii for the given node/edge arrays
+  function updateScalesAndRadii(nodes, edges) {
+    const countExtent = d3.extent(nodes, d => d.count);
+    nodeRadiusScale = d3.scaleSqrt().domain(countExtent).range([4, 32]);
+    nodes.forEach(n => { n.r = nodeRadiusScale(n.count); });
+
+    const weightExtent = d3.extent(edges, d => d.weight);
+    if (!weightExtent[0] || weightExtent.length < 2) {
+      strokeWidthScale = d3.scaleSqrt().domain([0, 1]).range([0.5, 8]);
+      opacityScale = d3.scaleLinear().domain([0, 1]).range([0.15, 0.5]);
+    } else {
+      strokeWidthScale = d3.scaleSqrt().domain(weightExtent).range([0.5, 8]);
+      opacityScale = d3.scaleLinear().domain(weightExtent).range([0.15, 0.5]);
+    }
+  }
+
+  function applyYearRange() {
+    const minVal = +yearMinSlider.value;
+    const maxVal = +yearMaxSlider.value;
+    const actualMin = Math.min(minVal, maxVal);
+    const actualMax = Math.max(minVal, maxVal);
+
+    updateYearFill();
+
+    applyFilters();
+  }
+
+  yearMinSlider.addEventListener("input", () => {
+    // Prevent min from passing max
+    if (+yearMinSlider.value > +yearMaxSlider.value) {
+      yearMinSlider.value = yearMaxSlider.value;
+    }
+    applyYearRange();
+  });
+
+  yearMaxSlider.addEventListener("input", () => {
+    // Prevent max from passing min
+    if (+yearMaxSlider.value < +yearMinSlider.value) {
+      yearMaxSlider.value = yearMinSlider.value;
+    }
+    applyYearRange();
+  });
+
+  // Initial fill update
+  updateYearFill();
+
+  document.getElementById("conn-close").addEventListener("click", () => clearSelection());
+
+}).catch(err => {
+  console.error("Failed to load data:", err);
+  document.body.innerHTML = `<div style="padding:40px;color:#cc4444;font-family:'Lucida Grande',sans-serif;">
+    <h2>Error loading data</h2><p>${err.message}</p></div>`;
+});
+
+// --- Resize ---
+window.addEventListener("resize", () => {
+  document.querySelector("svg").setAttribute("viewBox", `0 0 ${window.innerWidth} ${window.innerHeight}`);
+  if (simulation) {
+    simulation.force("center", d3.forceCenter(window.innerWidth / 2, window.innerHeight / 2));
+    simulation.force("x", d3.forceX(window.innerWidth / 2).strength(0.03));
+    simulation.force("y", d3.forceY(window.innerHeight / 2).strength(0.03));
+    simulation.alpha(0.3).restart();
+  }
+});
+</script>
+</body>
+</html>
