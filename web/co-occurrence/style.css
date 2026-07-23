@@ -1,0 +1,576 @@
+  /* ============================================================
+     Aqua Design Language -- macOS Leopard era (10.5, 2007-2008)
+     Gray gradient window surfaces, translucent panels
+     Iconic "gel pill" specular highlights, 32-bit color
+     Blue reserved for accents/focus, not entire backgrounds
+     References: Apple HIG 2008, Part III "The Aqua Interface"
+     ============================================================ */
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+    overflow: hidden;
+    /* Leopard desktop: neutral gradient, lets content breathe */
+    background:
+      radial-gradient(ellipse at 50% 20%, #e8e0d4 0%, #c8c0b4 40%, #a8a098 70%, #888078 100%);
+    color: #3a3a3a;
+  }
+
+  #chart { width: 100vw; height: 100vh; }
+  svg { display: block; width: 100%; height: 100%; }
+
+  /* ============================================================
+     Aqua Window Panels -- Leopard gray gradient surface
+     ============================================================ */
+
+  .aqua-window {
+    position: absolute; z-index: 5;
+    border-radius: 10px;
+    /* Leopard window body: light gray gradient, subtle translucency */
+    background: linear-gradient(180deg,
+      rgba(240, 240, 238, 0.90) 0%,
+      rgba(225, 225, 222, 0.88) 100%
+    );
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    /* Aqua window border -- subtle, silver-toned */
+    border: 1px solid rgba(120, 120, 118, 0.50);
+    border-top-color: rgba(200, 200, 198, 0.6);
+    /* Soft drop shadow, not too deep */
+    box-shadow:
+      0 4px 20px rgba(0, 0, 0, 0.30),
+      0 1px 4px rgba(0, 0, 0, 0.20),
+      inset 0 1px 0 rgba(255, 255, 255, 0.70),
+      inset 0 -1px 0 rgba(100, 100, 98, 0.10);
+  }
+
+  /* Aqua title bar -- unified with toolbar in Leopard */
+  .aqua-titlebar {
+    height: 22px;
+    border-radius: 10px 10px 0 0;
+    /* Leopard title bar: gray gradient, not blue */
+    background: linear-gradient(180deg,
+      rgba(210, 210, 206, 0.95) 0%,
+      rgba(180, 180, 176, 0.90) 45%,
+      rgba(170, 170, 166, 0.92) 55%,
+      rgba(175, 175, 172, 0.90) 100%
+    );
+    border-bottom: 1px solid rgba(100, 100, 98, 0.45);
+    position: relative;
+    cursor: default;
+    /* Top specular highlight -- the iconic Aqua shine */
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.80),
+      inset 0 -1px 0 rgba(80, 80, 78, 0.15);
+  }
+  /* Glossy top reflection on title bar */
+  .aqua-titlebar::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 45%;
+    background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.03) 100%
+    );
+    border-radius: 10px 10px 0 0;
+    pointer-events: none;
+  }
+
+  /* Window body padding */
+  .aqua-body {
+    padding: 12px 16px;
+    color: #3a3a3a;
+  }
+
+  /* ============================================================
+     Title window (top-left)
+     ============================================================ */
+  .title-window {
+    top: 14px; left: 16px;
+    min-width: 300px;
+  }
+  .title-window .aqua-titlebar span {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+    font-size: 12px; font-weight: 700;
+    color: #4a4a4a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+    letter-spacing: 0.02em;
+  }
+  .title-window .aqua-body p {
+    font-size: 11px; color: #666;
+    line-height: 1.5;
+  }
+
+  /* ============================================================
+     Legend window (top-right)
+     ============================================================ */
+  .legend-window {
+    top: 14px; right: 14px;
+    min-width: 190px;
+  }
+  .legend-window .aqua-titlebar span {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+    font-size: 11px; font-weight: 700;
+    color: #4a4a4a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+  .legend-window .aqua-body .legend-item {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 4px 0;
+    font-size: 11px; color: #444;
+  }
+  .legend-item .legend-swatch {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .legend-item .legend-label {
+    cursor: pointer; user-select: none;
+  }
+
+  /* ============================================================
+     Connection panel (overlay)
+     ============================================================ */
+  .conn-window {
+    top: 14px; right: 14px; z-index: 6;
+    min-width: 280px; max-width: 320px;
+    max-height: 75vh;
+    overflow-y: auto;
+    display: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(140, 140, 138, 0.5) transparent;
+  }
+  .conn-window::-webkit-scrollbar { width: 7px; }
+  .conn-window::-webkit-scrollbar-track { background: transparent; }
+  .conn-window::-webkit-scrollbar-thumb {
+    background: rgba(140, 140, 138, 0.45);
+    border-radius: 4px;
+    border: 1px solid rgba(200, 200, 198, 0.3);
+  }
+  .conn-window .aqua-titlebar span {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; height: 100%; padding-right: 8px;
+    font-size: 11px; font-weight: 700;
+    color: #4a4a4a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+    margin-left: 4px;
+  }
+  .close-btn {
+    background: radial-gradient(circle at 40% 35%,
+      #ff9090 0%, #e05050 60%, #b02020 100%);
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.9);
+    width: 14px; height: 14px; border-radius: 50%;
+    font-size: 11px; line-height: 12px; text-align: center;
+    cursor: pointer; flex-shrink: 0;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.45),
+      0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: background 0.12s;
+    margin-right: 3px;
+  }
+  .close-btn:hover {
+    background: radial-gradient(circle at 40% 35%,
+      #ffb0b0 0%, #f06060 60%, #c03030 100%);
+  }
+  .conn-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(160, 160, 158, 0.25);
+  }
+  .conn-row:last-child { border-bottom: none; }
+  .conn-rank {
+    color: #999;
+    width: 18px; text-align: right;
+    font-size: 10px; font-weight: 700;
+  }
+  .conn-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    border: 1px solid rgba(0,0,0,0.12);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .conn-name {
+    flex: 1; color: #444; font-size: 11px; font-weight: 600;
+  }
+  .conn-weight {
+    color: #3a6aaa; font-weight: 700; font-size: 11px;
+  }
+  .conn-bar-bg {
+    width: 48px; height: 8px;
+    /* Aqua groove: inset shadow */
+    background: linear-gradient(180deg,
+      rgba(200, 200, 196, 0.6) 0%,
+      rgba(235, 235, 232, 0.8) 100%
+    );
+    border-radius: 4px; overflow: hidden;
+    border: 1px solid rgba(130, 130, 128, 0.25);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .conn-bar {
+    height: 100%;
+    /* Aqua accent blue gel bar */
+    background: linear-gradient(180deg,
+      #90b8f0 0%, #5a88d8 50%, #3868b0 100%
+    );
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+
+  /* ============================================================
+     Controls window (bottom-left)
+     ============================================================ */
+  .controls-window {
+    bottom: 16px; left: 16px;
+  }
+  .controls-window .aqua-titlebar span {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+    font-size: 11px; font-weight: 700;
+    color: #4a4a4a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+  .controls-window .aqua-body label {
+    display: block; margin: 5px 0;
+    font-size: 11px; color: #444;
+    font-weight: 600;
+  }
+  .controls-window .aqua-body span.val {
+    color: #3a6aaa; font-weight: 700;
+  }
+
+  /* Aqua gel slider -- the track is a shallow groove */
+  input[type=range] {
+    width: 150px; vertical-align: middle;
+    -webkit-appearance: none; appearance: none;
+    height: 6px; border-radius: 3px;
+    /* Groove track */
+    background: linear-gradient(180deg,
+      rgba(180, 180, 176, 0.7) 0%,
+      rgba(200, 200, 196, 0.5) 100%
+    );
+    border: 1px solid rgba(120, 120, 118, 0.35);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+    outline: none; margin: 0 8px;
+  }
+  /* Aqua gel thumb -- classic glossy sphere */
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%;
+    /* Radial gel gradient with strong specular */
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #f0f0ee 10%, #d8d8d4 25%,
+      #b0b0ac 45%, #90908c 65%, #787874 85%, #60605c 100%
+    );
+    border: 1px solid rgba(60, 60, 58, 0.4);
+    box-shadow:
+      0 2px 5px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #f0f0ee 10%, #d8d8d4 25%,
+      #b0b0ac 45%, #90908c 65%, #787874 85%, #60605c 100%
+    );
+    border: 1px solid rgba(60, 60, 58, 0.4);
+    box-shadow:
+      0 2px 5px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60);
+    cursor: pointer;
+  }
+ /* ============================================================
+    Checkbox
+ ============================================================ */
+.checkbox-container{
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.show-labels {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+/* 2. Position the container */
+.apple-aqua-label {
+  display: inline-block;
+  position: relative;
+  cursor: pointer;
+  font-size: 24px;
+  width: 1em;
+  height: 1em;
+}
+
+/* 3. Build the Aqua glassy box */
+.aqua-box {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 16px;
+  width: 16px;
+  background-image: linear-gradient(
+      rgba(255, 255, 255, 0.9),
+      rgba(255, 255, 255, 0.3));
+  border: 1px solid #1c497d;
+  border-radius: 6px;
+  box-shadow: 
+    inset 0 1px 2px rgba(255, 255, 255, 0.6), 
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease-in-out;
+  pointer-events: none;
+}
+
+/* 4. Add the classic top white glare */
+.aqua-box::after {
+  content: "";
+  position: absolute;
+  top: 0px;
+  left: 10%;
+  width: 80%;
+  height: 40%;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.6), rgba(255,255,255,0));
+  border-radius: 4px;
+}
+
+/* 5. Checked State - Make it glow blue */
+.show-labels:checked + .aqua-box {
+  background: linear-gradient(to bottom, #0a50d0, #a0e8ff);
+  box-shadow: 
+    inset 0 1px 1px rgba(255, 255, 255, 0.6);
+}
+
+/* 6. The checkmark icon */
+.aqua-box::before {
+  content: "";
+  position: absolute;
+  display: none;
+  left: 6px;
+  width: 5px;
+  bottom:4px;
+  height: 10px;
+  border: solid black;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}
+
+.show-labels:checked + .aqua-box::before {
+  display: block;
+}
+
+  
+  /* ============================================================
+     Dual-range year slider
+     Two overlapping range inputs, gel thumbs tinted blue (min) / green (max)
+     ============================================================ */
+  .year-slider-container {
+    display: flex; align-items: center; gap: 0;
+    margin: 4px 0;
+  }
+  .year-slider-track {
+    position: relative;
+    width: 150px; height: 22px;
+    flex-shrink: 0;
+  }
+  .year-slider-track input[type=range] {
+    position: absolute;
+    top: 0; left: 0;
+    width: 150px; height: 22px;
+    -webkit-appearance: none; appearance: none;
+    background: transparent;
+    pointer-events: none;
+    outline: none;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+  }
+  /* Groove track behind both thumbs */
+  .year-slider-track::before {
+    content: '';
+    position: absolute;
+    top: 8px; left: 0; right: 0;
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(180deg,
+      rgba(180, 180, 176, 0.7) 0%,
+      rgba(200, 200, 196, 0.5) 100%
+    );
+    border: 1px solid rgba(120, 120, 118, 0.35);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+    pointer-events: none;
+    z-index: 0;
+  }
+  /* Filled range between the two thumbs */
+  .year-slider-fill {
+    position: absolute;
+    top: 9px; height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg,
+      rgba(58, 136, 216, 0.40) 0%,
+      rgba(52, 180, 100, 0.40) 100%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+  /* Thumbs sit above track */
+  .year-slider-track input[type=range]::-webkit-slider-thumb {
+    pointer-events: all;
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1px solid rgba(60, 60, 58, 0.4);
+    box-shadow:
+      0 2px 5px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+    cursor: pointer;
+    z-index: 2;
+  }
+  .year-slider-track input[type=range]::-moz-range-thumb {
+    pointer-events: all;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1px solid rgba(60, 60, 58, 0.4);
+    box-shadow:
+      0 2px 5px rgba(0, 0, 0, 0.30),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+    cursor: pointer;
+    z-index: 2;
+  }
+  /* Left thumb -- blue gel tint (start of range) */
+  #year-min::-webkit-slider-thumb {
+    background: radial-gradient(circle at 38% 32%,
+       #a0e8ff 15%, #0a50d0 90%
+    );
+    z-index: 3;
+  }
+  #year-min::-moz-range-thumb {
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #e8f0ff 10%, #83dffd 25%, #0342b9 80%, #02318b 100%
+    );
+    z-index: 3;
+  }
+  /* Right thumb -- green gel tint (end of range) */
+  #year-max::-webkit-slider-thumb {
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #e8ffe8 10%, #90e0a0 25%,
+      #44bb66 45%, #30a050 65%, #208038 85%, #16602a 100%
+    );
+  }
+  #year-max::-moz-range-thumb {
+    background: radial-gradient(circle at 38% 32%,
+      #ffffff 0%, #e8ffe8 10%, #90e0a0 25%,
+      #44bb66 45%, #30a050 65%, #208038 85%, #16602a 100%
+    );
+  }
+  .year-slider-label {
+    font-size: 11px; color: #3a6aaa; font-weight: 700;
+    white-space: nowrap; margin-left: 8px;
+  }
+
+  /* ============================================================
+     Aqua Push Button -- per design_ideas/aqua_css_button.html
+     Strong vertical gradient + color-dodge specular strip
+     ============================================================ */
+  button.aqua-btn {
+    display: block;
+    margin-top: 10px;
+    text-align: center;
+    text-decoration: none;
+    color: #1a1a1a;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 0.2rem 2rem;
+    border-radius: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.50);
+    box-shadow: 2px 2px 5px 1px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.10s ease, box-shadow 0.10s ease;
+    /* Dark blue top to bright cyan bottom */
+    background: linear-gradient(to bottom, #0342b9, #83dffd);
+  }
+  /* Specular highlight strip */
+  button.aqua-btn::after {
+    mix-blend-mode: color-dodge;
+    content: "";
+    position: absolute;
+    top: 0%;
+    left: 5%;
+    width: 90%;
+    height: 10px;
+    border-radius: 20px 20px 40px 40px;
+    overflow: hidden;
+    background-image: linear-gradient(
+      rgba(255, 255, 255, 0.9),
+      rgba(255, 255, 255, 0.3)
+      
+    );
+    opacity: 0.7;
+    z-index: 3;
+    pointer-events: none;
+  }
+  button.aqua-btn:hover {
+    background: linear-gradient(to bottom, #0a50d0, #a0e8ff);
+    box-shadow: 2px 2px 7px 1px rgba(0, 0, 0, 0.16);
+  }
+  button.aqua-btn:active {
+    background: linear-gradient(to bottom, #83dffd, #0342b9);
+    box-shadow:
+      inset 0 2px 4px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(0, 0, 0, 0.10);
+  }
+  button.aqua-btn:active::after {
+    opacity: 0.2;
+  }
+
+  /* Button row for side-by-side layout */
+  .btn-row {
+    display: flex; gap: 10px; margin-top: 10px;
+  }
+
+  /* ============================================================
+     Tooltip -- translucent dark panel per HIG p.236
+     (like Aperture's transparent adjustment panel)
+     ============================================================ */
+  .tooltip {
+    position: absolute; pointer-events: none;
+    /* Dark translucent background -- white text floats above */
+    background: linear-gradient(180deg,
+      rgba(30, 30, 28, 0.82) 0%,
+      rgba(20, 20, 18, 0.86) 100%
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(80, 80, 78, 0.45);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 11px; line-height: 1.5;
+    color: rgba(240, 240, 238, 0.95);
+    display: none; z-index: 10;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.40);
+  }
+  .tooltip strong { color: #a0c8ff; }
+
+  /* ============================================================
+     Highlight states
+     ============================================================ */
+  .node-dimmed { opacity: 0.06 !important; }
+  .edge-dimmed { opacity: 0.03 !important; }
+  .label-dimmed { opacity: 0.04 !important; }
