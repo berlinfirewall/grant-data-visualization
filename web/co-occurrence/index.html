@@ -24,27 +24,205 @@ function showBarTip(event, text) {
 function hideBarTip() {
   document.getElementById("conn-bar-tip").style.display = "none";
 }
+
+// ============================================================
+// i18n: Language switching (EN / RU)
+// ============================================================
+let currentLang = "en";
+let countryTranslations = {};
+
+const i18n = {
+  en: {
+    page_title: "Co-occurrence Country Graph",
+    desc_paragraph: 'This visualization shows how different countries are mentioned in <br>Russian grant datasets. Edges are determined by checking for<br>frequency of mention of each country relative to its neighboring node.',
+    legend_paragraph: 'Node size = total number of mentions <br> Edge thickness = сo-mentions <br> Color = region',
+    regions_title: "Regions",
+    connections: "Connections",
+    controls: "Controls",
+    presidential_grants: "Presidential Grants",
+    culture_grants: "Culture Grants",
+    edge_threshold: "Edge threshold",
+    show_labels: "Show labels",
+    year: "Year",
+    reset_zoom: "Reset Zoom",
+    reset_all: "Reset All",
+    region_names: {
+      "Europe": "Europe",
+      "CIS": "CIS",
+      "Americas": "Americas",
+      "Asia": "Asia",
+      "Africa": "Africa",
+      "Middle_East": "Middle East",
+      "Oceania": "Oceania",
+      "South_America": "South America"
+    },
+    // Dynamic tooltip/connection strings
+    count: "Count",
+    region: "Region",
+    dataset: "Dataset",
+    presidential: "Presidential",
+    culture: "Culture",
+    all: "All",
+    and_more: "more",
+    conn_bar_pres: "Presidential",
+    conn_bar_cult: "Culture"
+  },
+  ru: {
+    page_title: "Граф соупомянутых стран",
+    desc_paragraph: "Визуализация показывает, какие страны упоминаются <br>в базах данных российских грантов. Связи определяются<br>по частоте упоминания каждой страны относительно соседних узлов.",
+    legend_paragraph: "Размер узла = общее число упоминаний <br> Толщина связи = количество совместных упоминаний <br> Цвет = регион",
+    regions_title: "Регионы",
+    connections: "Связи",
+    controls: "Управление",
+    presidential_grants: "Президентские гранты",
+    culture_grants: "Гранты в культуре",
+    edge_threshold: "Порог связей",
+    show_labels: "Показать подписи",
+    year: "Год",
+    reset_zoom: "Сбросить масштаб",
+    reset_all: "Сбросить всё",
+    region_names: {
+      "Europe": "Европа",
+      "CIS": "СНГ",
+      "Americas": "Америка",
+      "Asia": "Азия",
+      "Africa": "Африка",
+      "Middle_East": "Ближний Восток",
+      "Oceania": "Океания",
+      "South_America": "Южная Америка"
+    },
+    count: "Количество",
+    region: "Регион",
+    dataset: "Датасет",
+    presidential: "Президентский",
+    culture: "Культура",
+    all: "Все",
+    and_more: "ещё",
+    conn_bar_pres: "Президентский",
+    conn_bar_cult: "Культура"
+  }
+};
+
+function t(key) {
+  return i18n[currentLang][key] || key;
+}
+
+function tRegion(regionKey) {
+  const rn = i18n[currentLang].region_names;
+  return rn[regionKey] || regionKey.replace(/_/g, " ");
+}
+
+function translateCountry(name) {
+  if (currentLang === "ru") {
+    return countryTranslations[name] || name;
+  }
+  // English: use the display name from node data (underscores → spaces)
+  return name.replace(/_/g, " ");
+}
+
+function updateStaticUI() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    const val = t(key);
+    if (val) {
+      el.innerHTML = val;
+    }
+  });
+}
+
+// Language toggle buttons
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("lang-en").addEventListener("click", () => switchLang("en"));
+  document.getElementById("lang-ru").addEventListener("click", () => switchLang("ru"));
+
+  // Minimize/restore buttons (mac-style, top-left of titlebar)
+  document.querySelectorAll(".minimize-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const windowId = btn.getAttribute("data-window-id");
+      const win = document.querySelector(`.aqua-window[data-window-id="${windowId}"]`);
+      if (!win) return;
+
+      const icon = btn.querySelector(".minimize-icon");
+
+      if (win.classList.contains("minimized")) {
+        win.classList.remove("minimized");
+        if (icon) icon.src = "yellow_circle.svg";
+        btn.title = "Minimize";
+      } else {
+        win.classList.add("minimized");
+        if (icon) icon.src = "yellow_circle_restore.svg";
+        btn.title = "Restore";
+      }
+    });
+  });
+});
+
+function switchLang(lang) {
+  currentLang = lang;
+  document.getElementById("lang-en").classList.toggle("active", lang === "en");
+  document.getElementById("lang-ru").classList.toggle("active", lang === "ru");
+  updateStaticUI();
+  // Rebuild legend with translated region names
+  if (window.rebuildLegend) window.rebuildLegend();
+  // Rebuild the graph to update node labels + restart simulation for layout
+  if (currentNodes && currentEdges && labelGroup) {
+    rebuildGraphLabels();
+    // Restart simulation so labels re-layout
+    if (simulation) {
+      simulation.alpha(0.5).restart();
+      setTimeout(() => { if (simulation) simulation.alpha(0.05); }, 2000);
+    }
+  }
+}
+
+// Called after language switch to update all visible labels + tooltip template
+function rebuildGraphLabels() {
+  if (!labelGroup || !currentNodes) return;
+
+  // Update labels
+  labelGroup.selectAll("text")
+    .text(d => translateCountry(d.name))
+    .style("display", () => document.getElementById("show-labels").checked ? "block" : "none");
+
+  // Clear selection so connection panel resets cleanly
+  if (selectedNode) {
+    clearSelection();
+  }
+}
+
+// Override selectNode's connection panel rendering to use translations
+const _originalSelectNode = null; // we patch inline below
 </script>
 
 <!-- Title Window -->
-<div class="aqua-window title-window">
+<div class="aqua-window title-window" data-window-id="title">
   <div class="aqua-titlebar">
-    <span>Co-occurrence Country Graph</span>
+    <div class="window-buttons">
+      <button class="minimize-btn" data-window-id="title" title="Minimize">
+        <img src="yellow_circle.svg" alt="Minimize" class="minimize-icon">
+      </button>
+    </div>
+    <span data-i18n="page_title">Co-occurrence Country Graph</span>
   </div>
   <div class="aqua-body">
-   <p>
+   <p data-i18n="desc_paragraph">
    This visualization shows how different countries are mentioned in <br>
    Russian grant datasets. Edges are determined by checking for<br>
    frequency of mention of each country relative to its neighboring node.
    </p><br>
-    <p>Node size = total number of mentions <br> Edge thickness = relatedness <br> Color = region</p>
+    <p data-i18n="legend_paragraph">Node size = total number of mentions <br> Edge thickness = relatedness <br> Color = region</p>
+    <div class="lang-toggle-row">
+      <button class="aqua-btn lang-btn active" id="lang-en">EN</button>
+      <button class="aqua-btn lang-btn" id="lang-ru">RU</button>
+    </div>
   </div>
 </div>
 
 <!-- Legend Window -->
 <div class="aqua-window legend-window" id="legend">
   <div class="aqua-titlebar">
-    <span>Regions</span>
+    <span data-i18n="regions_title">Regions</span>
   </div>
   <div class="aqua-body" id="legend-body"></div>
 </div>
@@ -58,9 +236,14 @@ function hideBarTip() {
 </div>
 
 <!-- Controls Window -->
-<div class="aqua-window controls-window">
+<div class="aqua-window controls-window" data-window-id="controls">
   <div class="aqua-titlebar">
-    <span>Controls</span>
+    <div class="window-buttons">
+      <button class="minimize-btn" data-window-id="controls" title="Minimize">
+        <img src="yellow_circle.svg" alt="Minimize" class="minimize-icon">
+      </button>
+    </div>
+    <span data-i18n="controls">Controls</span>
   </div>
   <div class="aqua-body">
     <div class="dataset-toggles">
@@ -69,28 +252,28 @@ function hideBarTip() {
           <input type="checkbox" class="show-labels" id="toggle-presidential" checked>
           <span class="aqua-box"></span>
         </div>
-        Presidential Grants
+        <span data-i18n="presidential_grants">Presidential Grants</span>
       </label>
       <label class="dataset-toggle-label">
         <div class="checkbox-container" style="top: 4px;">
           <input type="checkbox" class="show-labels" id="toggle-culture" checked>
           <span class="aqua-box"></span>
         </div>
-        Culture Grants
+        <span data-i18n="culture_grants">Culture Grants</span>
       </label>
     </div>
     <label>
-      Edge threshold:
+      <span data-i18n="edge_threshold">Edge threshold</span>:
       <input type="range" id="threshold" min="1" max="200" value="10" step="1">
       <span class="val" id="thresh-val">10</span>
     </label>
-    <label>Show labels <div class="checkbox-container" style="top: 5px;">
+    <label><span data-i18n="show_labels">Show labels</span> <div class="checkbox-container" style="top: 5px;">
       <input type="checkbox" class="show-labels" id="show-labels">
                 <span class="aqua-box"></span>
       </div>
     </label>
     <div class="year-slider-container">
-      <span style="font-size:11px;font-weight:600;color:#444;margin-right:4px;">Year:</span>
+      <span style="font-size:11px;font-weight:600;color:#444;margin-right:4px;" data-i18n="year">Year</span>:
       <div class="year-slider-track" id="year-slider">
         <div class="year-slider-fill" id="year-fill"></div>
         <input type="range" id="year-min" min="0" max="9" value="0" step="1">
@@ -99,8 +282,8 @@ function hideBarTip() {
       <span class="year-slider-label" id="year-label">2017 - 2026</span>
     </div>
     <div class="btn-row">
-      <button class="aqua-btn" id="reset-zoom">Reset Zoom</button>
-      <button class="aqua-btn" id="reset-all">Reset All</button>
+      <button class="aqua-btn" id="reset-zoom" data-i18n="reset_zoom">Reset Zoom</button>
+      <button class="aqua-btn" id="reset-all" data-i18n="reset_all">Reset All</button>
     </div>
   </div>
 </div>
@@ -233,6 +416,12 @@ let currentEdges = [];
 let nodeRadiusScale, strokeWidthScale, opacityScale;
 let allNodes = [];   // all-time nodes (for connection panel lookup)
 let allEdges = [];   // all-time edges (for year slider fallback)
+
+// --- D3 selections exposed globally for language switch ---
+let labelGroup = null;
+let nodeGroup = null;
+let linkGroup = null;
+let simulation = null;
 
 // --- Raw dataset storage ---
 let presData = null;  // { nodes, edges, by_year }
@@ -381,15 +570,17 @@ function updateScalesAndRadii(nodes, edges) {
   }
 }
 
-// --- Load both datasets ---
+// --- Load both datasets + country translations ---
 Promise.all([
   d3.json("graph_data.json"),
-  d3.json("culture_cooccurrence_graph_data.json")
-]).then(([presRaw, cultRaw]) => {
+  d3.json("culture_cooccurrence_graph_data.json"),
+  d3.json("country_names.json")
+]).then(([presRaw, cultRaw, countryTrans]) => {
 
   // Store raw data
   presData = presRaw;
   cultData = cultRaw;
+  countryTranslations = countryTrans;
 
   // --- Build unified year keys from both datasets ---
   const presYears = presData.by_year ? Object.keys(presData.by_year).sort() : [];
@@ -454,6 +645,7 @@ Promise.all([
     document.getElementById("toggle-presidential").checked = true;
     document.getElementById("toggle-culture").checked = true;
     datasetsActive = { presidential: true, culture: true };
+    switchLang("en");
     yearMinSlider.value = 0;
     yearMaxSlider.value = yearRange;
     updateYearFill();
@@ -491,8 +683,7 @@ Promise.all([
   };
 
   // --- Shared state ---
-  let simulation;
-  let linkGroup, nodeGroup, labelGroup;
+  // simulation, linkGroup, nodeGroup, labelGroup declared globally above for i18n access
   let selectedNode = null;
   const connPanel = document.getElementById("conn-panel");
   const connTitle = document.getElementById("conn-title");
@@ -600,17 +791,17 @@ Promise.all([
     if (capped) sorted = sorted.slice(0, maxShow);
     const maxTotal = sorted.length ? sorted[0].total : 1;
 
-    connTitle.textContent = `${d.display} connections (${totalCount})`;
+    connTitle.textContent = `${translateCountry(d.name)} — ${t("connections")} (${totalCount})`;
     const connId = (i, seg) => `cb-${i}-${seg}`;
     connList.innerHTML = sorted.map((entry, i) => {
       const { name, presidential, culture, total } = entry;
       const nd = allNodes.find(n => n.name === name);
       const color = nd ? (regionColors[nd.region] || "#888") : "#888";
-      const displayName = (nd ? nd.display : name).replace(/_/g, " ");
+      const displayName = translateCountry(nd ? nd.name : name);
       const presPct = presidential > 0 ? (presidential / maxTotal * 100).toFixed(1) : 0;
       const cultPct = culture > 0 ? (culture / maxTotal * 100).toFixed(1) : 0;
-      const presTitle = presidential > 0 ? `Presidential: ${presidential}` : null;
-      const cultTitle = culture > 0 ? `Culture: ${culture}` : null;
+      const presTitle = presidential > 0 ? `${t("conn_bar_pres")}: ${presidential}` : null;
+      const cultTitle = culture > 0 ? `${t("conn_bar_cult")}: ${culture}` : null;
       return `<div class="conn-row">
         <span class="conn-rank">${i + 1}</span>
         <div class="conn-dot" style="background:${color}"></div>
@@ -621,7 +812,7 @@ Promise.all([
         </div>
         <span class="conn-weight">${total}</span>
       </div>`;
-    }).join("") + (capped ? `<div class="conn-row" style="color:#999;font-size:10px;padding:8px 0;"><em>... and ${totalCount - maxShow} more</em></div>` : "");
+    }).join("") + (capped ? `<div class="conn-row" style="color:#999;font-size:10px;padding:8px 0;"><em>${currentLang === "ru" ? `... и ещё ${totalCount - maxShow} ${t("and_more")}` : `... and ${totalCount - maxShow} more`}</em></div>` : "");
 
     connPanel.style.display = "block";
     document.getElementById("legend").style.display = "none";
@@ -691,7 +882,7 @@ Promise.all([
       .attr("font-weight", "600")
       .attr("pointer-events", "none")
       .attr("filter", "url(#lbl-outline)")
-      .text(d => d.display)
+      .text(d => translateCountry(d.name))
       .style("display", d => document.getElementById("show-labels").checked ? "block" : "none");
 
     // Tooltip + selection
@@ -711,14 +902,14 @@ Promise.all([
           // Both datasets active: show total + split
           const presCount = d.counts_by_dataset.presidential || 0;
           const cultCount = d.counts_by_dataset.culture || 0;
-          countLine = `Count: ${d.count}<br>&nbsp;&nbsp;Presidential: ${presCount}<br>&nbsp;&nbsp;Culture: ${cultCount}`;
+          countLine = `${t("count")}: ${d.count}<br>&nbsp;&nbsp;${t("presidential")}: ${presCount}<br>&nbsp;&nbsp;${t("culture")}: ${cultCount}`;
         } else {
           // Single dataset: just show total
-          const dsName = d.datasets ? (d.datasets[0] === "presidential" ? "Presidential" : "Culture") : "All";
-          countLine = `Count: ${d.count}<br>Dataset: ${dsName}`;
+          const dsName = d.datasets ? (d.datasets[0] === "presidential" ? t("presidential") : t("culture")) : t("all");
+          countLine = `${t("count")}: ${d.count}<br>${t("dataset")}: ${dsName}`;
         }
         tooltip.style("display", "block")
-          .html(`<strong>${d.display}</strong><br>Region: ${d.region}<br>${countLine}`);
+          .html(`<strong>${translateCountry(d.name)}</strong><br>${t("region")}: ${tRegion(d.region)}<br>${countLine}`);
       })
       .on("mousemove", function(event) {
         tooltip.style("left", (event.pageX + 14) + "px")
@@ -796,6 +987,7 @@ Promise.all([
     updateScalesAndRadii(currentNodes, currentEdges);
     clearSelection();
     buildGraph();
+    updateStaticUI();
   }
 
   // --- Render initial graph ---
@@ -803,22 +995,9 @@ Promise.all([
   updateYearFill();
 
   // --- Legend ---
-  const legendBody = document.getElementById("legend-body");
-  legendBody.innerHTML = Object.entries(regionColors).map(([region, color]) => {
-    const safeKey = region.replace(/_/g, "");
-    return `<div class="legend-item">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <div class="legend-swatch" style="background:${color}"></div>
-        <label class="legend-label" for="region-${safeKey}">${region.replace(/_/g, " ")}</label>
-      </div>
-      <div class="checkbox-container">
-        <input type="checkbox" class="show-labels" id="region-${safeKey}" checked>
-        <span class="aqua-box"></span>
-      </div>
-    </div>`;
-  }).join("");
+  buildLegend();
 
-  // Wire up region checkbox handlers
+  // Wire up region checkbox handlers (once)
   Object.keys(regionColors).forEach(region => {
     const safeKey = region.replace(/_/g, "");
     const cb = document.getElementById(`region-${safeKey}`);
@@ -828,6 +1007,45 @@ Promise.all([
       applyFilters();
     });
   });
+
+  // --- Reusable legend builder (called on language switch) ---
+  function buildLegend() {
+    const legendBody = document.getElementById("legend-body");
+    legendBody.innerHTML = Object.entries(regionColors).map(([region, color]) => {
+      const safeKey = region.replace(/_/g, "");
+      const checked = activeRegions.has(region) ? "checked" : "";
+      return `<div class="legend-item">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="legend-swatch" style="background:${color}"></div>
+          <label class="legend-label" for="region-${safeKey}">${tRegion(region)}</label>
+        </div>
+        <div class="checkbox-container">
+          <input type="checkbox" class="show-labels" id="region-${safeKey}" ${checked}>
+          <span class="aqua-box"></span>
+        </div>
+      </div>`;
+    }).join("");
+
+    // Re-wire handlers after innerHTML rebuild
+    Object.keys(regionColors).forEach(region => {
+      const safeKey = region.replace(/_/g, "");
+      const cb = document.getElementById(`region-${safeKey}`);
+      // Remove old listeners by cloning
+      const newCb = cb.cloneNode(true);
+      cb.parentNode.replaceChild(newCb, cb);
+      newCb.addEventListener("change", () => {
+        if (newCb.checked) { activeRegions.add(region); }
+        else { activeRegions.delete(region); }
+        applyFilters();
+      });
+    });
+  }
+
+  // Expose to global scope for language switch
+  window.rebuildLegend = function() {
+    if (!regionColors) return;
+    buildLegend();
+  };
 
   // --- Controls ---
   document.getElementById("threshold").addEventListener("input", () => {
