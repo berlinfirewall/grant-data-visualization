@@ -262,12 +262,12 @@ function mergeDatasets(yearMinIdx, yearMaxIdx) {
     // Use year aggregation if year data exists
     if (data.by_year && yearKeys.length > 0) {
       const agg = aggregateYearDataSingle(data, yearMinIdx, yearMaxIdx);
-      agg.nodes.forEach(n => n.datasets = [source]);
+      agg.nodes.forEach(n => { n.datasets = [source]; n.counts_by_dataset = {[source]: n.count}; });
       agg.edges.forEach(e => e.source_dataset = source);
       return agg;
     }
     return {
-      nodes: data.nodes.map(n => ({...n, datasets: [source]})),
+      nodes: data.nodes.map(n => ({...n, datasets: [source], counts_by_dataset: {[source]: n.count}})),
       edges: data.edges.map(e => ({...e, source_dataset: source}))
     };
   }
@@ -296,13 +296,18 @@ function mergeDatasets(yearMinIdx, yearMaxIdx) {
           display: n.display,
           count: 0,
           region: region,
-          datasets: []
+          datasets: [],
+          counts_by_dataset: {}
         };
       }
       nodeMap[n.name].count += n.count;
       if (!nodeMap[n.name].datasets.includes(source)) {
         nodeMap[n.name].datasets.push(source);
       }
+      if (!nodeMap[n.name].counts_by_dataset[source]) {
+        nodeMap[n.name].counts_by_dataset[source] = 0;
+      }
+      nodeMap[n.name].counts_by_dataset[source] += n.count;
     });
 
     edgesToUse.forEach(e => {
@@ -700,9 +705,20 @@ Promise.all([
           .attr("stroke-width", 2.5)
           .style("filter", "url(#node-glow)");
         d3.select(this).attr("opacity", 1);
-        const dsLabel = d.datasets ? d.datasets.map(ds => ds === "presidential" ? "Presidential" : "Culture").join(" + ") : "All";
+        // Build tooltip content
+        let countLine = "";
+        if (d.counts_by_dataset && Object.keys(d.counts_by_dataset).length > 1) {
+          // Both datasets active: show total + split
+          const presCount = d.counts_by_dataset.presidential || 0;
+          const cultCount = d.counts_by_dataset.culture || 0;
+          countLine = `Count: ${d.count}<br>&nbsp;&nbsp;Presidential: ${presCount}<br>&nbsp;&nbsp;Culture: ${cultCount}`;
+        } else {
+          // Single dataset: just show total
+          const dsName = d.datasets ? (d.datasets[0] === "presidential" ? "Presidential" : "Culture") : "All";
+          countLine = `Count: ${d.count}<br>Dataset: ${dsName}`;
+        }
         tooltip.style("display", "block")
-          .html(`<strong>${d.display}</strong><br>Region: ${d.region}<br>Count: ${d.count}<br>Dataset: ${dsLabel}`);
+          .html(`<strong>${d.display}</strong><br>Region: ${d.region}<br>${countLine}`);
       })
       .on("mousemove", function(event) {
         tooltip.style("left", (event.pageX + 14) + "px")
