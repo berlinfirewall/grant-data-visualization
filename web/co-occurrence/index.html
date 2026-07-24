@@ -10,6 +10,21 @@
 
 <div id="chart"></div>
 <div class="tooltip" id="tooltip"></div>
+<div class="tooltip conn-bar-tooltip" id="conn-bar-tip"></div>
+
+<script>
+// Small tooltip for connection bar segment hover
+function showBarTip(event, text) {
+  const tip = document.getElementById("conn-bar-tip");
+  tip.textContent = text;
+  tip.style.display = "block";
+  tip.style.left = (event.pageX - tip.offsetWidth / 2) + "px";
+  tip.style.top = (event.pageY - 32) + "px";
+}
+function hideBarTip() {
+  document.getElementById("conn-bar-tip").style.display = "none";
+}
+</script>
 
 <!-- Title Window -->
 <div class="aqua-window title-window">
@@ -17,11 +32,11 @@
     <span>Co-occurrence Country Graph</span>
   </div>
   <div class="aqua-body">
-  	 <p>
-  	 	This visualization shows how different countries are mentioned in the <br>
-  	 	<a href="https://tochno.st/datasets/pres_grants">Russian presidential grant dataset</a>. Edges are determined by checking for<br>
-  	 	frequency of mention of each country relative to its neighboring node.
-  	 </p><br>
+   <p>
+   This visualization shows how different countries are mentioned in <br>
+   Russian grant datasets. Edges are determined by checking for<br>
+   frequency of mention of each country relative to its neighboring node.
+   </p><br>
     <p>Node size = total number of mentions <br> Edge thickness = relatedness <br> Color = region</p>
   </div>
 </div>
@@ -48,12 +63,28 @@
     <span>Controls</span>
   </div>
   <div class="aqua-body">
+    <div class="dataset-toggles">
+      <label class="dataset-toggle-label">
+        <div class="checkbox-container" style="top: 4px;">
+          <input type="checkbox" class="show-labels" id="toggle-presidential" checked>
+          <span class="aqua-box"></span>
+        </div>
+        Presidential Grants
+      </label>
+      <label class="dataset-toggle-label">
+        <div class="checkbox-container" style="top: 4px;">
+          <input type="checkbox" class="show-labels" id="toggle-culture" checked>
+          <span class="aqua-box"></span>
+        </div>
+        Culture Grants
+      </label>
+    </div>
     <label>
       Edge threshold:
       <input type="range" id="threshold" min="1" max="200" value="10" step="1">
       <span class="val" id="thresh-val">10</span>
     </label>
-      <label>Show labels <div class="checkbox-container" style="top: 5px;">
+    <label>Show labels <div class="checkbox-container" style="top: 5px;">
       <input type="checkbox" class="show-labels" id="show-labels">
                 <span class="aqua-box"></span>
       </div>
@@ -203,41 +234,197 @@ let nodeRadiusScale, strokeWidthScale, opacityScale;
 let allNodes = [];   // all-time nodes (for connection panel lookup)
 let allEdges = [];   // all-time edges (for year slider fallback)
 
-// --- Load data ---
-d3.json("graph_data.json").then(data => {
-  const nodes = data.nodes.map(d => ({...d, r: 0}));
-  allNodes = nodes;
-  const nodeNames = new Set(nodes.map(n => n.name));
+// --- Raw dataset storage ---
+let presData = null;  // { nodes, edges, by_year }
+let cultData = null;  // { nodes, edges, by_year }
 
-  // Filter orphan edges
-  let orphanCount = 0;
-  const validEdges = data.edges.filter(e => {
-    const ok = nodeNames.has(e.source) && nodeNames.has(e.target);
-    if (!ok) { orphanCount++; console.warn(`Dropped edge: ${e.source} -> ${e.target} (weight ${e.weight})`); }
-    return ok;
-  });
-  console.log(`Edges: ${data.edges.length} total, ${validEdges.length} valid, ${orphanCount} dropped.`);
+// --- Dataset toggle state ---
+let datasetsActive = { presidential: true, culture: true };
 
-  // --- Build year keys list ---
-  yearKeys = [];
-  if (data.by_year) {
-    Object.keys(data.by_year).forEach(y => yearKeys.push(y));
+// --- Normalize region strings (strip leading/trailing whitespace) ---
+function normalizeRegion(r) {
+  if (!r) return r;
+  return r.trim();
+}
+
+// --- Merge two datasets ---
+// Returns { nodes, edges } merged by active toggles.
+// Nodes with the same name are merged (counts summed).
+// Edges are kept separate per dataset for visual distinction.
+function mergeDatasets(yearMinIdx, yearMaxIdx) {
+  const activeSets = [];
+  if (datasetsActive.presidential && presData) activeSets.push({ data: presData, source: "presidential" });
+  if (datasetsActive.culture && cultData) activeSets.push({ data: cultData, source: "culture" });
+
+  if (activeSets.length === 0) return { nodes: [], edges: [] };
+  if (activeSets.length === 1) {
+    const { data, source } = activeSets[0];
+    // Use year aggregation if year data exists
+    if (data.by_year && yearKeys.length > 0) {
+      const agg = aggregateYearDataSingle(data, yearMinIdx, yearMaxIdx);
+      agg.nodes.forEach(n => n.datasets = [source]);
+      agg.edges.forEach(e => e.source_dataset = source);
+      return agg;
+    }
+    return {
+      nodes: data.nodes.map(n => ({...n, datasets: [source]})),
+      edges: data.edges.map(e => ({...e, source_dataset: source}))
+    };
   }
-  yearKeys.sort();  // ensure chronological order: 2017, 2018, ..., 2026
 
-  // --- Scales ---
+  // Both datasets active -- merge
+  const nodeMap = {};
+  const edgeMap = {};
+
+  activeSets.forEach(({ data, source }) => {
+    // Determine nodes to aggregate
+    let nodesToUse = data.nodes;
+    if (data.by_year && yearKeys.length > 0) {
+      nodesToUse = aggregateYearDataSingle(data, yearMinIdx, yearMaxIdx).nodes;
+    }
+    // Also get edges for the year range
+    let edgesToUse = data.edges;
+    if (data.by_year && yearKeys.length > 0) {
+      edgesToUse = aggregateYearDataSingle(data, yearMinIdx, yearMaxIdx).edges;
+    }
+
+    nodesToUse.forEach(n => {
+      const region = normalizeRegion(n.region);
+      if (!nodeMap[n.name]) {
+        nodeMap[n.name] = {
+          name: n.name,
+          display: n.display,
+          count: 0,
+          region: region,
+          datasets: []
+        };
+      }
+      nodeMap[n.name].count += n.count;
+      if (!nodeMap[n.name].datasets.includes(source)) {
+        nodeMap[n.name].datasets.push(source);
+      }
+    });
+
+    edgesToUse.forEach(e => {
+      const key = `${e.source}|||${e.target}|||${source}`;
+      if (!edgeMap[key]) {
+        edgeMap[key] = { source: e.source, target: e.target, weight: 0, source_dataset: source };
+      }
+      edgeMap[key].weight += e.weight;
+    });
+  });
+
+  return {
+    nodes: Object.values(nodeMap).map(d => ({...d, r: 0})),
+    edges: Object.values(edgeMap)
+  };
+}
+
+// --- Aggregate year data for a single dataset ---
+function aggregateYearDataSingle(data, minIdx, maxIdx) {
+  const selectedYears = [];
+  for (let i = minIdx; i <= maxIdx; i++) {
+    if (i < yearKeys.length) selectedYears.push(yearKeys[i]);
+  }
+
+  if (!data.by_year || selectedYears.length === 0) {
+    return { nodes: data.nodes.map(n => ({...n, r: 0})), edges: data.edges };
+  }
+
+  // Aggregate edges: sum weights for same source-target pairs
+  const edgeMap = {};
+  selectedYears.forEach(y => {
+    const yearEdges = (data.by_year[y] && data.by_year[y].edges) ? data.by_year[y].edges : [];
+    yearEdges.forEach(e => {
+      const key = e.source + "|||" + e.target;
+      if (!edgeMap[key]) edgeMap[key] = { source: e.source, target: e.target, weight: 0 };
+      edgeMap[key].weight += e.weight;
+    });
+  });
+
+  // Aggregate nodes: sum counts for same name, keep first display/region
+  const nodeMap = {};
+  selectedYears.forEach(y => {
+    const yearNodes = (data.by_year[y] && data.by_year[y].nodes) ? data.by_year[y].nodes : [];
+    yearNodes.forEach(n => {
+      if (!nodeMap[n.name]) {
+        nodeMap[n.name] = { name: n.name, display: n.display, count: 0, region: normalizeRegion(n.region) };
+      }
+      nodeMap[n.name].count += n.count;
+    });
+  });
+
+  return {
+    nodes: Object.values(nodeMap).map(d => ({...d, r: 0})),
+    edges: Object.values(edgeMap)
+  };
+}
+
+// Recompute all d3 scales + node radii for the given node/edge arrays
+function updateScalesAndRadii(nodes, edges) {
   const countExtent = d3.extent(nodes, d => d.count);
   nodeRadiusScale = d3.scaleSqrt().domain(countExtent).range([4, 32]);
   nodes.forEach(n => { n.r = nodeRadiusScale(n.count); });
 
-  const weightExtent = d3.extent(validEdges, d => d.weight);
-  strokeWidthScale = d3.scaleSqrt().domain(weightExtent).range([0.5, 8]);
-  opacityScale = d3.scaleLinear().domain(weightExtent).range([0.15, 0.5]);
+  const weightExtent = d3.extent(edges, d => d.weight);
+  if (!weightExtent[0] || weightExtent.length < 2) {
+    strokeWidthScale = d3.scaleSqrt().domain([0, 1]).range([0.5, 8]);
+    opacityScale = d3.scaleLinear().domain([0, 1]).range([0.15, 0.5]);
+  } else {
+    strokeWidthScale = d3.scaleSqrt().domain(weightExtent).range([0.5, 8]);
+    opacityScale = d3.scaleLinear().domain(weightExtent).range([0.15, 0.5]);
+  }
+}
 
-  // --- Set current data to all-time ---
-  currentNodes = nodes;
-  currentEdges = validEdges;
-  allEdges = validEdges;  // stored globally for year slider
+// --- Load both datasets ---
+Promise.all([
+  d3.json("graph_data.json"),
+  d3.json("culture_cooccurrence_graph_data.json")
+]).then(([presRaw, cultRaw]) => {
+
+  // Store raw data
+  presData = presRaw;
+  cultData = cultRaw;
+
+  // --- Build unified year keys from both datasets ---
+  const presYears = presData.by_year ? Object.keys(presData.by_year).sort() : [];
+  const cultYears = cultData.by_year ? Object.keys(cultData.by_year).sort() : [];
+  const allYearSet = new Set([...presYears, ...cultYears]);
+  yearKeys = Array.from(allYearSet).sort();
+
+  // --- Set year slider range ---
+  const yearMinSlider = document.getElementById("year-min");
+  const yearMaxSlider = document.getElementById("year-max");
+  const yearRange = yearKeys.length - 1;
+  yearMinSlider.setAttribute("max", yearRange);
+  yearMaxSlider.setAttribute("max", yearRange);
+  yearMinSlider.value = 0;
+  yearMaxSlider.value = yearRange;
+
+  // --- Year fill + label references ---
+  const yearFill = document.getElementById("year-fill");
+  const yearLabel = document.getElementById("year-label");
+
+  function updateYearFill() {
+    const minVal = +yearMinSlider.value;
+    const maxVal = +yearMaxSlider.value;
+    const actualMin = Math.min(minVal, maxVal);
+    const actualMax = Math.max(minVal, maxVal);
+    const maxIdx = yearKeys.length - 1;
+    const pctMin = maxIdx > 0 ? (actualMin / maxIdx) * 100 : 0;
+    const pctMax = maxIdx > 0 ? (actualMax / maxIdx) * 100 : 100;
+    yearFill.style.left = pctMin + "%";
+    yearFill.style.width = (pctMax - pctMin) + "%";
+
+    const y1 = yearKeys[actualMin] || yearKeys[0];
+    const y2 = yearKeys[actualMax] || yearKeys[yearKeys.length - 1];
+    yearLabel.textContent = `${y1} - ${y2}`;
+  }
+
+  // --- Scales ---
+  nodeRadiusScale = d3.scaleSqrt().domain([0, 1]).range([4, 32]);
+  strokeWidthScale = d3.scaleSqrt().domain([0, 1]).range([0.5, 8]);
+  opacityScale = d3.scaleLinear().domain([0, 1]).range([0.15, 0.5]);
 
   // --- SVG setup ---
   const svg = d3.select("#chart").append("svg")
@@ -259,8 +446,11 @@ d3.json("graph_data.json").then(data => {
     document.getElementById("threshold").value = 10;
     document.getElementById("thresh-val").textContent = "10";
     document.getElementById("show-labels").checked = false;
+    document.getElementById("toggle-presidential").checked = true;
+    document.getElementById("toggle-culture").checked = true;
+    datasetsActive = { presidential: true, culture: true };
     yearMinSlider.value = 0;
-    yearMaxSlider.value = 9;
+    yearMaxSlider.value = yearRange;
     updateYearFill();
 
     // Reset region filters (all active)
@@ -270,14 +460,24 @@ d3.json("graph_data.json").then(data => {
 
     // Clear selection and rebuild graph with defaults
     clearSelection();
-    const agg = aggregateYearData(0, 9);
-    currentEdges = agg.edges.filter(e => e.weight >= 10);
+    const minIdx = +yearMinSlider.value;
+    const maxIdx = +yearMaxSlider.value;
+    const merged = mergeDatasets(minIdx, maxIdx);
+    const t = 10;
+    currentEdges = merged.edges.filter(e => {
+      if (e.weight < t) return false;
+      const sNode = merged.nodes.find(n => n.name === e.source);
+      const tNode = merged.nodes.find(n => n.name === e.target);
+      if (!sNode || !tNode) return false;
+      return activeRegions.has(sNode.region) && activeRegions.has(tNode.region);
+    });
     const connectedNames = new Set();
     currentEdges.forEach(e => {
       connectedNames.add(e.source);
       connectedNames.add(e.target);
     });
-    currentNodes = agg.nodes.filter(n => connectedNames.has(n.name));
+    currentNodes = merged.nodes.filter(n => connectedNames.has(n.name) && activeRegions.has(n.region));
+    allNodes = merged.nodes;
     updateScalesAndRadii(currentNodes, currentEdges);
     buildGraph();
 
@@ -307,11 +507,12 @@ d3.json("graph_data.json").then(data => {
         .attr("stroke", d => strokeGradId(d.region))
         .attr("stroke-width", 1.5)
         .style("filter", null);
-      // Restore edges -- no transition, direct set for performance
+      // Restore edges -- uniform Aqua gray, no transition
       linkGroup.selectAll("line")
         .classed("edge-dimmed", false)
         .attr("stroke", "rgba(120,130,150,0.80)")
         .attr("stroke-opacity", d => opacityScale(d.weight))
+        .attr("stroke-dasharray", null)
         .style("filter", null);
       labelGroup.selectAll("text").classed("label-dimmed", false);
     }
@@ -334,12 +535,12 @@ d3.json("graph_data.json").then(data => {
       const tName = (typeof e.target === "object") ? e.target.name : e.target;
       if (sName === d.name) {
         connectedNames.add(tName);
-        connectedEdges.push({ name: tName, weight: e.weight });
+        connectedEdges.push({ name: tName, weight: e.weight, dataset: e.source_dataset });
         connectedEdgeKeys.add(idx);
       }
       if (tName === d.name) {
         connectedNames.add(sName);
-        connectedEdges.push({ name: sName, weight: e.weight });
+        connectedEdges.push({ name: sName, weight: e.weight, dataset: e.source_dataset });
         connectedEdgeKeys.add(idx);
       }
     });
@@ -378,32 +579,42 @@ d3.json("graph_data.json").then(data => {
     // --- Labels: direct class toggle, no transition ---
     labelGroup.selectAll("text").classed("label-dimmed", n => !connectedNames.has(n.name));
 
-    // --- Connection panel: cap at 100 entries to prevent DOM explosion ---
+    // --- Connection panel: stacked bars per dataset, cap at 100 ---
     const connMap = {};
     connectedEdges.forEach(ce => {
-      if (!connMap[ce.name]) connMap[ce.name] = 0;
-      connMap[ce.name] += ce.weight;
+      if (!connMap[ce.name]) connMap[ce.name] = { presidential: 0, culture: 0 };
+      if (ce.dataset === "presidential") connMap[ce.name].presidential += ce.weight;
+      else if (ce.dataset === "culture") connMap[ce.name].culture += ce.weight;
     });
-    let sorted = Object.entries(connMap).sort((a, b) => b[1] - a[1]);
+    let sorted = Object.entries(connMap).map(([name, info]) => ({
+      name, ...info, total: info.presidential + info.culture
+    })).sort((a, b) => b.total - a.total);
     const totalCount = sorted.length;
     const maxShow = 100;
     const capped = totalCount > maxShow;
     if (capped) sorted = sorted.slice(0, maxShow);
-    const maxW = sorted.length ? sorted[0][1] : 1;
+    const maxTotal = sorted.length ? sorted[0].total : 1;
 
     connTitle.textContent = `${d.display} connections (${totalCount})`;
+    const connId = (i, seg) => `cb-${i}-${seg}`;
     connList.innerHTML = sorted.map((entry, i) => {
-      const [name, weight] = entry;
+      const { name, presidential, culture, total } = entry;
       const nd = allNodes.find(n => n.name === name);
       const color = nd ? (regionColors[nd.region] || "#888") : "#888";
-      const barW = (weight / maxW * 100).toFixed(0);
       const displayName = (nd ? nd.display : name).replace(/_/g, " ");
+      const presPct = presidential > 0 ? (presidential / maxTotal * 100).toFixed(1) : 0;
+      const cultPct = culture > 0 ? (culture / maxTotal * 100).toFixed(1) : 0;
+      const presTitle = presidential > 0 ? `Presidential: ${presidential}` : null;
+      const cultTitle = culture > 0 ? `Culture: ${culture}` : null;
       return `<div class="conn-row">
         <span class="conn-rank">${i + 1}</span>
         <div class="conn-dot" style="background:${color}"></div>
         <span class="conn-name">${displayName}</span>
-        <div class="conn-bar-bg"><div class="conn-bar" style="width:${barW}%"></div></div>
-        <span class="conn-weight">${weight}</span>
+        <div class="conn-bar-bg">
+          ${presidential > 0 ? `<div class="conn-bar conn-bar-pres" id="${connId(i,'pres')}" style="width:${presPct}%;${presTitle ? 'cursor:default;' : ''}" ${presTitle ? `onmouseover="showBarTip(event,'${presTitle}')" onmouseout="hideBarTip()"` : ''}></div>` : ''}
+          ${culture > 0 ? `<div class="conn-bar conn-bar-cult" id="${connId(i,'cult')}" style="width:${cultPct}%;${cultTitle ? 'cursor:default;' : ''}" ${cultTitle ? `onmouseover="showBarTip(event,'${cultTitle}')" onmouseout="hideBarTip()"` : ''}></div>` : ''}
+        </div>
+        <span class="conn-weight">${total}</span>
       </div>`;
     }).join("") + (capped ? `<div class="conn-row" style="color:#999;font-size:10px;padding:8px 0;"><em>... and ${totalCount - maxShow} more</em></div>` : "");
 
@@ -426,7 +637,7 @@ d3.json("graph_data.json").then(data => {
       .force("y", d3.forceY(window.innerHeight / 2).strength(0.03))
       .alphaDecay(0.05);
 
-    // Edges -- translucent gray with a subtle blue Aqua tint
+    // Edges -- uniform Aqua gray
     linkGroup = g.append("g").attr("class", "links");
     linkGroup.selectAll("line")
       .data(currentEdges).join("line")
@@ -448,8 +659,6 @@ d3.json("graph_data.json").then(data => {
       .attr("cursor", "pointer")
       .attr("opacity", 0.97)
       .call(d3.drag().on("start", dragStarted).on("drag", dragged).on("end", dragEnded));
-
-    // Stroke ring (outer border with gradient stroke)
 
     // Sphere body (linear gradient fill)
     nodeGroups.append("circle")
@@ -491,8 +700,9 @@ d3.json("graph_data.json").then(data => {
           .attr("stroke-width", 2.5)
           .style("filter", "url(#node-glow)");
         d3.select(this).attr("opacity", 1);
+        const dsLabel = d.datasets ? d.datasets.map(ds => ds === "presidential" ? "Presidential" : "Culture").join(" + ") : "All";
         tooltip.style("display", "block")
-          .html(`<strong>${d.display}</strong><br>Region: ${d.region}<br>Count: ${d.count}`);
+          .html(`<strong>${d.display}</strong><br>Region: ${d.region}<br>Count: ${d.count}<br>Dataset: ${dsLabel}`);
       })
       .on("mousemove", function(event) {
         tooltip.style("left", (event.pageX + 14) + "px")
@@ -536,14 +746,45 @@ d3.json("graph_data.json").then(data => {
   function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
   function dragEnded(event, d) { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
 
-  // --- Render ---
-  // Apply initial threshold + orphan cleanup so the loaded graph matches the slider defaults
-  currentEdges = currentEdges.filter(e => e.weight >= +document.getElementById("threshold").value);
-  const initialConnected = new Set();
-  currentEdges.forEach(e => { initialConnected.add(e.source); initialConnected.add(e.target); });
-  currentNodes = currentNodes.filter(n => initialConnected.has(n.name));
-  updateScalesAndRadii(currentNodes, currentEdges);
-  buildGraph();
+  // --- Apply all filters (threshold + year range + region + dataset toggle) then rebuild ---
+  function applyFilters() {
+    const t = +document.getElementById("threshold").value;
+    const minVal = +yearMinSlider.value;
+    const maxVal = +yearMaxSlider.value;
+    const actualMin = Math.min(minVal, maxVal);
+    const actualMax = Math.max(minVal, maxVal);
+
+    const merged = mergeDatasets(actualMin, actualMax);
+
+    // Filter edges by threshold and region
+    currentEdges = merged.edges.filter(e => {
+      if (e.weight < t) return false;
+      // Both endpoints must be in active regions
+      const sNode = merged.nodes.find(n => n.name === e.source);
+      const tNode = merged.nodes.find(n => n.name === e.target);
+      if (!sNode || !tNode) return false;
+      return activeRegions.has(sNode.region) && activeRegions.has(tNode.region);
+    });
+
+    // Remove orphan nodes (no remaining edges) and filter by active regions
+    const connectedNames = new Set();
+    currentEdges.forEach(e => {
+      connectedNames.add(e.source);
+      connectedNames.add(e.target);
+    });
+    currentNodes = merged.nodes.filter(n =>
+      connectedNames.has(n.name) && activeRegions.has(n.region)
+    );
+    allNodes = merged.nodes;
+
+    updateScalesAndRadii(currentNodes, currentEdges);
+    clearSelection();
+    buildGraph();
+  }
+
+  // --- Render initial graph ---
+  applyFilters();
+  updateYearFill();
 
   // --- Legend ---
   const legendBody = document.getElementById("legend-body");
@@ -572,41 +813,6 @@ d3.json("graph_data.json").then(data => {
     });
   });
 
-  // --- Apply all filters (threshold + year range + region) then rebuild ---
-  function applyFilters() {
-    const t = +document.getElementById("threshold").value;
-    const minVal = +yearMinSlider.value;
-    const maxVal = +yearMaxSlider.value;
-    const actualMin = Math.min(minVal, maxVal);
-    const actualMax = Math.max(minVal, maxVal);
-
-    const agg = aggregateYearData(actualMin, actualMax);
-
-    // Filter edges by threshold and region
-    currentEdges = agg.edges.filter(e => {
-      if (e.weight < t) return false;
-      // Both endpoints must be in active regions
-      const sNode = agg.nodes.find(n => n.name === e.source);
-      const tNode = agg.nodes.find(n => n.name === e.target);
-      if (!sNode || !tNode) return false;
-      return activeRegions.has(sNode.region) && activeRegions.has(tNode.region);
-    });
-
-    // Remove orphan nodes (no remaining edges) and filter by active regions
-    const connectedNames = new Set();
-    currentEdges.forEach(e => {
-      connectedNames.add(e.source);
-      connectedNames.add(e.target);
-    });
-    currentNodes = agg.nodes.filter(n =>
-      connectedNames.has(n.name) && activeRegions.has(n.region)
-    );
-
-    updateScalesAndRadii(currentNodes, currentEdges);
-    clearSelection();
-    buildGraph();
-  }
-
   // --- Controls ---
   document.getElementById("threshold").addEventListener("input", () => {
     const t = +document.getElementById("threshold").value;
@@ -618,86 +824,18 @@ d3.json("graph_data.json").then(data => {
     labelGroup.selectAll("text").style("display", e.target.checked ? "block" : "none");
   });
 
+  // --- Dataset toggles ---
+  document.getElementById("toggle-presidential").addEventListener("change", e => {
+    datasetsActive.presidential = e.target.checked;
+    applyFilters();
+  });
+
+  document.getElementById("toggle-culture").addEventListener("change", e => {
+    datasetsActive.culture = e.target.checked;
+    applyFilters();
+  });
+
   // --- Dual-range year slider ---
-  // yearKeys is sorted array of year strings, e.g. ["2017","2018",...,"2026"]
-  // Slider indices: 0 = yearKeys[0] (2017), 9 = yearKeys[9] (2026)
-  const yearMinSlider = document.getElementById("year-min");
-  const yearMaxSlider = document.getElementById("year-max");
-  const yearFill = document.getElementById("year-fill");
-  const yearLabel = document.getElementById("year-label");
-
-  // Compute aggregated nodes/edges for a range of year indices [minIdx, maxIdx]
-  function aggregateYearData(minIdx, maxIdx) {
-    const selectedYears = [];
-    for (let i = minIdx; i <= maxIdx; i++) {
-      if (i < yearKeys.length) selectedYears.push(yearKeys[i]);
-    }
-
-    if (!data.by_year || selectedYears.length === 0) {
-      return { nodes: allNodes, edges: allEdges };
-    }
-
-    // Aggregate edges: sum weights for same source-target pairs
-    const edgeMap = {};
-    selectedYears.forEach(y => {
-      const yearEdges = (data.by_year[y] && data.by_year[y].edges) ? data.by_year[y].edges : [];
-      yearEdges.forEach(e => {
-        const key = e.source + "|||" + e.target;
-        if (!edgeMap[key]) edgeMap[key] = { source: e.source, target: e.target, weight: 0 };
-        edgeMap[key].weight += e.weight;
-      });
-    });
-
-    // Aggregate nodes: sum counts for same name, keep first display/region
-    const nodeMap = {};
-    selectedYears.forEach(y => {
-      const yearNodes = (data.by_year[y] && data.by_year[y].nodes) ? data.by_year[y].nodes : [];
-      yearNodes.forEach(n => {
-        if (!nodeMap[n.name]) {
-          nodeMap[n.name] = { name: n.name, display: n.display, count: 0, region: n.region };
-        }
-        nodeMap[n.name].count += n.count;
-      });
-    });
-
-    return {
-      nodes: Object.values(nodeMap).map(d => ({...d, r: 0})),
-      edges: Object.values(edgeMap)
-    };
-  }
-
-  function updateYearFill() {
-    const minVal = +yearMinSlider.value;
-    const maxVal = +yearMaxSlider.value;
-    // Clamp: min cannot exceed max
-    const actualMin = Math.min(minVal, maxVal);
-    const actualMax = Math.max(minVal, maxVal);
-    const pctMin = (actualMin / 9) * 100;
-    const pctMax = (actualMax / 9) * 100;
-    yearFill.style.left = pctMin + "%";
-    yearFill.style.width = (pctMax - pctMin) + "%";
-
-    const y1 = yearKeys[actualMin] || yearKeys[0];
-    const y2 = yearKeys[actualMax] || yearKeys[yearKeys.length - 1];
-    yearLabel.textContent = `${y1} - ${y2}`;
-  }
-
-  // Recompute all d3 scales + node radii for the given node/edge arrays
-  function updateScalesAndRadii(nodes, edges) {
-    const countExtent = d3.extent(nodes, d => d.count);
-    nodeRadiusScale = d3.scaleSqrt().domain(countExtent).range([4, 32]);
-    nodes.forEach(n => { n.r = nodeRadiusScale(n.count); });
-
-    const weightExtent = d3.extent(edges, d => d.weight);
-    if (!weightExtent[0] || weightExtent.length < 2) {
-      strokeWidthScale = d3.scaleSqrt().domain([0, 1]).range([0.5, 8]);
-      opacityScale = d3.scaleLinear().domain([0, 1]).range([0.15, 0.5]);
-    } else {
-      strokeWidthScale = d3.scaleSqrt().domain(weightExtent).range([0.5, 8]);
-      opacityScale = d3.scaleLinear().domain(weightExtent).range([0.15, 0.5]);
-    }
-  }
-
   function applyYearRange() {
     const minVal = +yearMinSlider.value;
     const maxVal = +yearMaxSlider.value;
@@ -705,7 +843,6 @@ d3.json("graph_data.json").then(data => {
     const actualMax = Math.max(minVal, maxVal);
 
     updateYearFill();
-
     applyFilters();
   }
 
@@ -724,9 +861,6 @@ d3.json("graph_data.json").then(data => {
     }
     applyYearRange();
   });
-
-  // Initial fill update
-  updateYearFill();
 
   document.getElementById("conn-close").addEventListener("click", () => clearSelection());
 
